@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>API Configuration Test</h1>
+    <div id="result"></div>
+    
+    <script>
+        // Copy the API configuration from the main app
+        const API_BASE_URL = 'https://myhome-cleanteam-api.onrender.com';
+        
+        const buildApiUrl = (endpoint) => {
+            if (window.location.hostname === 'localhost') {
+                return endpoint;
+            }
+            return `${API_BASE_URL}${endpoint}`;
+        };
+        
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                // Test the API configuration
+                const apiUrl = buildApiUrl('/api/admin/staff');
+                resultDiv.innerHTML += `<p>API URL: ${apiUrl}</p>`;
+                
+                // Test the actual API call
+                const response = await fetch(apiUrl, {
+                    credentials: 'include'
+                });
+                
+                resultDiv.innerHTML += `<p>Response status: ${response.status}</p>`;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML += `<p>Success! Found ${data.data.length} staff members:</p>`;
+                    data.data.forEach(staff => {
+                        resultDiv.innerHTML += `<p>- ${staff.firstName} ${staff.lastName} (${staff.email})</p>`;
+                    });
+                } else {
+                    const error = await response.text();
+                    resultDiv.innerHTML += `<p>Error: ${error}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML += `<p>Exception: ${error.message}</p>`;
+            }
+        }
+        
+        testAPI();
+    </script>
+</body>
+</html> 
