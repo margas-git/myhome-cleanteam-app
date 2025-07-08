@@ -7,7 +7,6 @@ import { ClockInModal } from "../../components/ClockInModal";
 import { ClockOutModal } from "../../components/ClockOutModal";
 import { formatAddress } from '../../utils/addressFormatter';
 import { formatPhoneNumber } from '../../utils/phoneFormatter';
-import { VITE_GOOGLE_MAPS_API_KEY } from '../../config/maps';
 import { buildApiUrl } from "../../config/api";
 
 interface Customer {
@@ -55,7 +54,7 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
-  const { isLoaded: isGoogleLoaded } = useGoogleMaps();
+  const { isLoaded: isGoogleLoaded, apiKey } = useGoogleMaps();
 
   useEffect(() => {
     const geocodeAndGetStreetView = async () => {
@@ -63,9 +62,9 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
         setIsLoading(true);
         setError(false);
         
-        // Wait for Google Maps API to be loaded
-        if (!isGoogleLoaded || !window.google?.maps?.Geocoder) {
-          console.error('Google Maps Geocoder not available');
+        // Wait for Google Maps API to be loaded and API key to be available
+        if (!isGoogleLoaded || !window.google?.maps?.Geocoder || !apiKey) {
+          console.error('Google Maps Geocoder not available or API key missing');
           setError(true);
           return;
         }
@@ -80,7 +79,7 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
             
             // Let Google automatically choose the best view of the house
             // Remove heading parameter to use default optimal view
-            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${VITE_GOOGLE_MAPS_API_KEY}&pitch=0&fov=90`;
+            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90`;
             setImageUrl(streetViewUrl);
           } else {
             console.error('Geocoding failed:', status);
@@ -95,10 +94,10 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
       }
     };
 
-    if (address && isGoogleLoaded) {
+    if (address && isGoogleLoaded && apiKey) {
       geocodeAndGetStreetView();
     }
-  }, [address, isGoogleLoaded]);
+  }, [address, isGoogleLoaded, apiKey]);
 
   if (isLoading) {
     return (
@@ -233,13 +232,15 @@ export function StaffDashboard() {
 
   useEffect(() => {
     if (activeJob) {
-      const timer = setInterval(() => {
+      const timer = window.setInterval(() => {
         const now = new Date().getTime();
         const clockIn = new Date(activeJob.clockInTime).getTime();
         setElapsedSeconds(Math.floor((now - clockIn) / 1000));
       }, 1000);
 
-      return () => clearInterval(timer);
+      return () => {
+        window.clearInterval(timer);
+      };
     }
   }, [activeJob]);
 

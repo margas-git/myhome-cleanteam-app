@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useGoogleMaps } from "../hooks/useGoogleMaps";
 import { formatAddress } from '../utils/addressFormatter';
 import { buildApiUrl } from "../config/api";
 
@@ -46,6 +47,8 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(customer);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const { apiKey } = useGoogleMaps();
 
   useEffect(() => {
     if (isOpen) {
@@ -324,7 +327,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
             </div>
 
             {/* Customer Location Map */}
-            {selectedCustomer && (
+            {selectedCustomer && apiKey && (
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
@@ -339,7 +342,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
                     height="200" 
                     loading="lazy" 
                     allowFullScreen
-                    src={`https://www.google.com/maps/embed/v1/place?key=AIzaSyDhogaiA91DQLL0spIyywjBsB7An04TGhI&q=${encodeURIComponent(selectedCustomer.address ? formatAddress(selectedCustomer.address) : '')}&zoom=17&maptype=roadmap`}
+                    src={`https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodeURIComponent(selectedCustomer.address ? formatAddress(selectedCustomer.address) : '')}&zoom=17&maptype=roadmap`}
                     style={{ border: 0 }}
                   />
                 </div>
