@@ -1,0 +1,13 @@
+{
+  "version": "5",
+  "dialect": "pg",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1751937930866,
+      "tag": "0000_magical_santa_claus",
+      "breakpoints": true
+    }
+  ]
+}
