@@ -2,15 +2,15 @@
 // TODO: Replace with your actual Google Maps API key
 
 // Use the environment variable with VITE_ prefix for client-side access
-export const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+export const VITE_GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 // Debug: Log the API key (remove in production)
-console.log('Google Maps API Key loaded:', GOOGLE_MAPS_API_KEY ? 'Present' : 'Missing');
+console.log('Google Maps API Key loaded:', VITE_GOOGLE_MAPS_API_KEY ? 'Present' : 'Missing');
 
 declare global {
   interface ImportMeta {
     env: {
-      GOOGLE_MAPS_API_KEY: string;
+      VITE_GOOGLE_MAPS_API_KEY: string;
       [key: string]: any;
     };
   }

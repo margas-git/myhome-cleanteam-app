@@ -7,7 +7,7 @@ import { ClockInModal } from "../../components/ClockInModal";
 import { ClockOutModal } from "../../components/ClockOutModal";
 import { formatAddress } from '../../utils/addressFormatter';
 import { formatPhoneNumber } from '../../utils/phoneFormatter';
-import { GOOGLE_MAPS_API_KEY } from '../../config/maps';
+import { VITE_GOOGLE_MAPS_API_KEY } from '../../config/maps';
 import { buildApiUrl } from "../../config/api";
 
 interface Customer {
@@ -80,7 +80,7 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
             
             // Let Google automatically choose the best view of the house
             // Remove heading parameter to use default optimal view
-            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&pitch=0&fov=90`;
+            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${VITE_GOOGLE_MAPS_API_KEY}&pitch=0&fov=90`;
             setImageUrl(streetViewUrl);
           } else {
             console.error('Geocoding failed:', status);
