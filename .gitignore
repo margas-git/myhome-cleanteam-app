@@ -95,3 +95,6 @@ jspm_packages/
 
 # Drizzle
 drizzle/
+
+# Allow client dist but exclude server dist
+!client/dist/
