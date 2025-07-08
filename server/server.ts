@@ -35,12 +35,19 @@ export function createServer() {
   // Serve static files from the built client
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  app.use(express.static(resolve(__dirname, "../client/dist")));
+  const staticPath = resolve(__dirname, "../client/dist");
+  const indexPath = resolve(__dirname, "../client/dist/index.html");
+  
+  console.log("Static files path:", staticPath);
+  console.log("Index file path:", indexPath);
+  
+  app.use(express.static(staticPath));
 
   // Serve the React app for all non-API routes
   app.get("*", (req: Request, res: Response) => {
     if (!req.path.startsWith("/api")) {
-      res.sendFile(resolve(__dirname, "../client/dist/index.html"));
+      console.log("Serving React app for path:", req.path);
+      res.sendFile(indexPath);
     }
   });
 
