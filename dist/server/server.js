@@ -1,0 +1,45 @@
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+import { authRouter } from "./routes/auth.js";
+import staffRouter from "./routes/staff.js";
+import adminRouter from "./routes/admin.js";
+import { authMiddleware } from "./middleware/auth.js";
+// import other route modules as they are implemented
+export function createServer() {
+    const app = express();
+    app.use(helmet());
+    // CORS configuration for production
+    const corsOrigin = process.env.CORS_ORIGIN || "https://my-home-clean-team-web.vercel.app";
+    app.use(cors({
+        origin: corsOrigin,
+        credentials: true
+    }));
+    app.use(express.json());
+    app.use(cookieParser());
+    // Health check
+    app.get("/api/health", (_req, res) => res.json({ success: true, data: "ok" }));
+    // Routes
+    app.use("/api/auth", authRouter);
+    app.use("/api/staff", authMiddleware, staffRouter);
+    app.use("/api/admin", authMiddleware, adminRouter);
+    // Serve static files from the built client
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    app.use(express.static(resolve(__dirname, "../client/dist")));
+    // Serve the React app for all non-API routes
+    app.get("*", (req, res) => {
+        if (!req.path.startsWith("/api")) {
+            res.sendFile(resolve(__dirname, "../client/dist/index.html"));
+        }
+    });
+    // Error handler
+    app.use((err, _req, res) => {
+        console.error(err);
+        res.status(500).json({ success: false, error: "Internal Server Error" });
+    });
+    return app;
+}
