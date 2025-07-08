@@ -2,6 +2,8 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -30,9 +32,16 @@ export function createServer() {
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
 
-  // 404 handler
-  app.use((req: Request, res: Response) => {
-    res.status(404).json({ success: false, error: "Not Found" });
+  // Serve static files from the built client
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  app.use(express.static(resolve(__dirname, "../client/dist")));
+
+  // Serve the React app for all non-API routes
+  app.get("*", (req: Request, res: Response) => {
+    if (!req.path.startsWith("/api")) {
+      res.sendFile(resolve(__dirname, "../client/dist/index.html"));
+    }
   });
 
   // Error handler
