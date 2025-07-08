@@ -1,3 +1,4 @@
+import React from "react";
 import { Route, Switch, useLocation } from "wouter";
 import { Login } from "./pages/Login";
 import { StaffDashboard } from "./pages/staff/StaffDashboard";

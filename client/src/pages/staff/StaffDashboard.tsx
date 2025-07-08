@@ -201,7 +201,7 @@ export function StaffDashboard() {
     }
     
     fetchData();
-  }, [user, loading, navigate]);
+  }, [user, loading, setLocation]);
 
   // Fetch customers only when location is available
   useEffect(() => {

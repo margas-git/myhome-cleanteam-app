@@ -1,25 +1,37 @@
-import { execSync } from 'child_process';
-import { config } from 'dotenv';
+#!/usr/bin/env node
 
-// Load environment variables
-config();
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 console.log('🚀 Setting up database...');
 
 try {
   // Generate migrations
   console.log('📝 Generating migrations...');
-  execSync('npm run db:generate', { stdio: 'inherit' });
-  
+  execSync('npx drizzle-kit generate:pg', { 
+    stdio: 'inherit',
+    cwd: __dirname 
+  });
+
   // Push schema to database
   console.log('📊 Pushing schema to database...');
-  execSync('npm run db:push', { stdio: 'inherit' });
-  
+  execSync('npx drizzle-kit push:pg', { 
+    stdio: 'inherit',
+    cwd: __dirname 
+  });
+
   // Seed the database
   console.log('🌱 Seeding database...');
-  execSync('npm run seed', { stdio: 'inherit' });
-  
-  console.log('✅ Database setup complete!');
+  execSync('node server/seed.ts', { 
+    stdio: 'inherit',
+    cwd: __dirname 
+  });
+
+  console.log('✅ Database setup completed successfully!');
 } catch (error) {
   console.error('❌ Database setup failed:', error.message);
   process.exit(1);
