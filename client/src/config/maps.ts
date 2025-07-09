@@ -10,6 +10,12 @@ export async function getGoogleMapsApiKey(): Promise<string> {
 
   // Try to get API key from environment variable first (for instant loading)
   const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  console.log('🔍 Environment variable check:', { 
+    hasEnvVar: !!envApiKey, 
+    envVarLength: envApiKey?.length || 0,
+    envVarPreview: envApiKey ? `${envApiKey.substring(0, 10)}...` : 'undefined'
+  });
+  
   if (envApiKey) {
     console.log('✅ Google Maps API Key loaded from environment');
     cachedApiKey = envApiKey;
