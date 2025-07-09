@@ -9,7 +9,7 @@ export async function getGoogleMapsApiKey(): Promise<string> {
   }
 
   try {
-    const response = await fetch('/api/admin/google-maps-api-key');
+    const response = await fetch('/api/google-maps-api-key');
     if (!response.ok) {
       throw new Error('Failed to fetch API key');
     }

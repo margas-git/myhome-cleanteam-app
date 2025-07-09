@@ -2420,10 +2420,4 @@ export const broadcastDashboardUpdate = (eventType: string, data: any) => {
   });
 };
 
-// Add this new endpoint for Google Maps API key
-router.get("/google-maps-api-key", (req: Request, res: Response) => {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
-  res.json({ apiKey });
-});
-
 export default router; 

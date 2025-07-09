@@ -15,7 +15,7 @@ export function createServer() {
 
   app.use(helmet());
   // CORS configuration for production
-  const corsOrigin = process.env.CORS_ORIGIN || "https://my-home-clean-team-web.vercel.app";
+  const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam-app-production.up.railway.app";
   
   app.use(cors({ 
     origin: corsOrigin, 
@@ -27,7 +27,13 @@ export function createServer() {
   // Health check
   app.get("/api/health", (_req: Request, res: Response) => res.json({ success: true, data: "ok" }));
 
-  // Routes
+  // Public routes
+  app.get("/api/google-maps-api-key", (req: Request, res: Response) => {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    res.json({ apiKey });
+  });
+
+  // Protected routes
   app.use("/api/auth", authRouter);
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
