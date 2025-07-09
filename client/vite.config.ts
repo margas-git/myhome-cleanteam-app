@@ -14,9 +14,5 @@ export default defineConfig({
         changeOrigin: true
       }
     }
-  },
-  // Expose environment variables to the frontend
-  define: {
-    'import.meta.env.VITE_GOOGLE_MAPS_API_KEY': JSON.stringify(process.env.VITE_GOOGLE_MAPS_API_KEY)
   }
 }); 

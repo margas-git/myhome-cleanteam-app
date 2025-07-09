@@ -8,22 +8,8 @@ export async function getGoogleMapsApiKey(): Promise<string> {
     return cachedApiKey;
   }
 
-  // Try to get API key from environment variable first (for instant loading)
-  const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-  console.log('🔍 Environment variable check:', { 
-    hasEnvVar: !!envApiKey, 
-    envVarLength: envApiKey?.length || 0,
-    envVarPreview: envApiKey ? `${envApiKey.substring(0, 10)}...` : 'undefined'
-  });
-  
-  // Only use environment variable if it's not a test key
-  if (envApiKey && envApiKey !== 'test-key-for-debugging' && envApiKey.length > 20) {
-    console.log('✅ Google Maps API Key loaded from environment');
-    cachedApiKey = envApiKey;
-    return envApiKey;
-  }
-
-  // Fallback to server fetch if environment variable not available or is test key
+  // Always fetch from server to ensure we get the correct API key
+  // This avoids issues with build-time environment variables
   console.log('🔑 Fetching Google Maps API key from server...');
   
   try {
