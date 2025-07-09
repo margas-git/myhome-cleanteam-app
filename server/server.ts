@@ -60,6 +60,12 @@ export function createServer() {
   // Public routes
   app.get("/api/google-maps-api-key", (req: Request, res: Response) => {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    console.log('🔑 Server API Key Debug:', {
+      hasGoogleMapsKey: !!process.env.GOOGLE_MAPS_API_KEY,
+      hasViteKey: !!process.env.VITE_GOOGLE_MAPS_API_KEY,
+      keyLength: apiKey?.length || 0,
+      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined'
+    });
     res.json({ apiKey });
   });
 

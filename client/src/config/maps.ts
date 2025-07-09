@@ -16,13 +16,14 @@ export async function getGoogleMapsApiKey(): Promise<string> {
     envVarPreview: envApiKey ? `${envApiKey.substring(0, 10)}...` : 'undefined'
   });
   
-  if (envApiKey) {
+  // Only use environment variable if it's not a test key
+  if (envApiKey && envApiKey !== 'test-key-for-debugging' && envApiKey.length > 20) {
     console.log('✅ Google Maps API Key loaded from environment');
     cachedApiKey = envApiKey;
     return envApiKey;
   }
 
-  // Fallback to server fetch if environment variable not available
+  // Fallback to server fetch if environment variable not available or is test key
   console.log('🔑 Fetching Google Maps API key from server...');
   
   try {
