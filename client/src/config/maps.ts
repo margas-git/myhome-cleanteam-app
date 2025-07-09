@@ -9,7 +9,7 @@ export async function getGoogleMapsApiKey(): Promise<string> {
   }
 
   // Use the new initialization endpoint for better reliability
-  console.log('🗺️ Initializing Google Maps from server...');
+  console.log('🗺️ Initializing Google Maps from server... (v2)');
   
   try {
     const response = await fetch('/api/google-maps-init', {
