@@ -20,12 +20,12 @@ export function createServer() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "https://maps.googleapis.com", "https://maps.gstatic.com"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://maps.googleapis.com", "https://maps.gstatic.com"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://maps.googleapis.com"],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],
-          imgSrc: ["'self'", "data:", "https://maps.googleapis.com", "https://maps.gstatic.com", "https://streetviewpixels-pa.googleapis.com"],
-          connectSrc: ["'self'", "https://maps.googleapis.com"],
-          frameSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "https://maps.googleapis.com", "https://maps.gstatic.com", "https://streetviewpixels-pa.googleapis.com", "https://*.googleapis.com"],
+          connectSrc: ["'self'", "https://maps.googleapis.com", "https://*.googleapis.com"],
+          frameSrc: ["'self'", "https://maps.googleapis.com"],
           objectSrc: ["'none'"],
           mediaSrc: ["'self'"],
           manifestSrc: ["'self'"],
