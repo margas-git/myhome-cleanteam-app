@@ -1,18 +1,23 @@
 // Google Maps API Configuration
-// Fetch API key from server to avoid build-time environment variable issues
+// Use environment variable directly for instant loading
 
 let cachedApiKey: string | null = null;
-let hasLoggedFetch = false;
 
 export async function getGoogleMapsApiKey(): Promise<string> {
   if (cachedApiKey) {
     return cachedApiKey;
   }
 
-  if (!hasLoggedFetch) {
-    console.log('🔑 Fetching Google Maps API key...');
-    hasLoggedFetch = true;
+  // Try to get API key from environment variable first (for instant loading)
+  const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (envApiKey) {
+    console.log('✅ Google Maps API Key loaded from environment');
+    cachedApiKey = envApiKey;
+    return envApiKey;
   }
+
+  // Fallback to server fetch if environment variable not available
+  console.log('🔑 Fetching Google Maps API key from server...');
   
   try {
     const response = await fetch('/api/google-maps-api-key', {
@@ -20,7 +25,6 @@ export async function getGoogleMapsApiKey(): Promise<string> {
       headers: {
         'Content-Type': 'application/json',
       },
-      // Add timeout
       signal: AbortSignal.timeout(5000)
     });
     
@@ -31,9 +35,8 @@ export async function getGoogleMapsApiKey(): Promise<string> {
     const data = await response.json();
     cachedApiKey = data.apiKey;
     
-    // Only log once when API key is first loaded
     if (cachedApiKey) {
-      console.log('✅ Google Maps API Key loaded successfully');
+      console.log('✅ Google Maps API Key loaded from server');
     }
     
     return cachedApiKey || '';
@@ -60,8 +63,8 @@ declare global {
 // Instructions for setup:
 // 1. Get a Google Maps API key from Google Cloud Console
 // 2. Enable Places API and Maps JavaScript API
-// 3. Set GOOGLE_MAPS_API_KEY environment variable on Railway
-// 4. The API key will be fetched from the server at runtime
+// 3. Set VITE_GOOGLE_MAPS_API_KEY environment variable on Railway
+// 4. The API key will be available instantly from environment variable
 // 
 // Test key limitations:
 // - Limited requests per day

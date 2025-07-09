@@ -31,7 +31,7 @@ export function useGoogleMaps(apiKey?: string) {
     if (window.google && window.google.maps && window.google.maps.Geocoder) {
       setLoaded(true);
       if (!resolvedApiKey) {
-        // If no API key provided, fetch it from server
+        // If no API key provided, get it from environment or server
         if (!apiKey) {
           getGoogleMapsApiKey().then(setResolvedApiKey);
         } else {
@@ -50,7 +50,7 @@ export function useGoogleMaps(apiKey?: string) {
       setError(null);
 
       try {
-        // Get API key - either from parameter or from server
+        // Get API key - either from parameter, environment, or server
         let key = apiKey;
         if (!key) {
           key = await getGoogleMapsApiKey();
