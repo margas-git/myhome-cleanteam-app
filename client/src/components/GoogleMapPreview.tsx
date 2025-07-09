@@ -4,14 +4,18 @@ import { useGoogleMaps } from '../hooks/useGoogleMaps';
 interface GoogleMapPreviewProps {
   address: string;
   className?: string;
+  isGoogleLoaded?: boolean;
 }
 
-export function GoogleMapPreview({ address, className = "" }: GoogleMapPreviewProps) {
+export function GoogleMapPreview({ address, className = "", isGoogleLoaded: externalIsGoogleLoaded }: GoogleMapPreviewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const marker = useRef<any>(null);
   const [mapError, setMapError] = useState(false);
-  const { isLoaded: isGoogleLoaded } = useGoogleMaps();
+  
+  // Use external isGoogleLoaded if provided, otherwise use the hook
+  const { isLoaded: hookIsGoogleLoaded } = useGoogleMaps();
+  const isGoogleLoaded = externalIsGoogleLoaded !== undefined ? externalIsGoogleLoaded : hookIsGoogleLoaded;
 
   useEffect(() => {
     if (!address || !mapRef.current || !isGoogleLoaded) {

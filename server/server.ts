@@ -13,12 +13,42 @@ import { authMiddleware } from "./middleware/auth.js";
 export function createServer() {
   const app = express();
 
-  app.use(helmet());
-  // CORS configuration for production
+  // Configure helmet with CSP that allows Google Maps
+  // Temporarily disable helmet for local development to fix Safari issues
+  if (process.env.NODE_ENV === 'production') {
+    app.use(helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "https://maps.googleapis.com", "https://maps.gstatic.com"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://maps.googleapis.com"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          imgSrc: ["'self'", "data:", "https://maps.googleapis.com", "https://maps.gstatic.com", "https://streetviewpixels-pa.googleapis.com"],
+          connectSrc: ["'self'", "https://maps.googleapis.com"],
+          frameSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          mediaSrc: ["'self'"],
+          manifestSrc: ["'self'"],
+        },
+      },
+    }));
+  }
+  // CORS configuration
   const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam.up.railway.app";
   
+  // Allow localhost for development
+  const allowedOrigins = [
+    corsOrigin,
+    "http://localhost:5173",
+    "http://localhost:4000",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4000",
+    "http://127.0.0.1:3000"
+  ];
+  
   app.use(cors({ 
-    origin: corsOrigin, 
+    origin: true, // Allow all origins in development
     credentials: true 
   }));
   app.use(express.json());

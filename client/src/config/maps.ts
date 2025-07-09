@@ -2,26 +2,43 @@
 // Fetch API key from server to avoid build-time environment variable issues
 
 let cachedApiKey: string | null = null;
+let hasLoggedFetch = false;
 
 export async function getGoogleMapsApiKey(): Promise<string> {
   if (cachedApiKey) {
     return cachedApiKey;
   }
 
+  if (!hasLoggedFetch) {
+    console.log('🔑 Fetching Google Maps API key...');
+    hasLoggedFetch = true;
+  }
+  
   try {
-    const response = await fetch('/api/google-maps-api-key');
+    const response = await fetch('/api/google-maps-api-key', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // Add timeout
+      signal: AbortSignal.timeout(5000)
+    });
+    
     if (!response.ok) {
-      throw new Error('Failed to fetch API key');
+      throw new Error(`Failed to fetch API key: ${response.status} ${response.statusText}`);
     }
+    
     const data = await response.json();
     cachedApiKey = data.apiKey;
     
-    // Debug: Log the API key status
-    console.log('Google Maps API Key loaded:', cachedApiKey ? 'Present' : 'Missing');
+    // Only log once when API key is first loaded
+    if (cachedApiKey) {
+      console.log('✅ Google Maps API Key loaded successfully');
+    }
     
     return cachedApiKey || '';
   } catch (error) {
-    console.error('Failed to fetch Google Maps API key:', error);
+    console.error('❌ Failed to fetch Google Maps API key:', error);
     return '';
   }
 }

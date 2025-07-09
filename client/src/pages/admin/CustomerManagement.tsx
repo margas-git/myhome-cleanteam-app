@@ -7,6 +7,7 @@ import { GoogleMapPreview } from "../../components/GoogleMapPreview";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Label } from "../../components/ui/label";
 import { buildApiUrl } from "../../config/api";
+import { useGoogleMaps } from "../../hooks/useGoogleMaps";
 
 interface Customer {
   id: number;
@@ -51,12 +52,13 @@ export function CustomerManagement() {
     cleanFrequency: "weekly"
   });
 
+  // Add Google Maps hook at component level
+  const { isLoaded: isGoogleLoaded } = useGoogleMaps();
+
   // Helper function to format clean frequency for display
   const formatCleanFrequency = (frequency: string): string => {
     return frequency.charAt(0).toUpperCase() + frequency.slice(1).replace('-', ' ');
   };
-
-
 
   useEffect(() => {
     fetchCustomers();
@@ -420,6 +422,7 @@ export function CustomerManagement() {
                     <GoogleMapPreview 
                       address={newCustomer.address} 
                       className="mt-2"
+                      isGoogleLoaded={isGoogleLoaded}
                     />
                   )}
                 </div>
@@ -560,6 +563,7 @@ export function CustomerManagement() {
                   <GoogleMapPreview 
                     address={editCustomer.address} 
                     className="mt-2"
+                    isGoogleLoaded={isGoogleLoaded}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">

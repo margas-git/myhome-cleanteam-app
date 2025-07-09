@@ -54,18 +54,26 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const { isLoaded: isGoogleLoaded, apiKey } = useGoogleMaps();
+  const maxRetries = 3;
+
+  useEffect(() => {
+    // Reset state when address changes
+    setImageUrl(null);
+    setError(false);
+    setRetryCount(0);
+    setIsLoading(true);
+  }, [address]);
 
   useEffect(() => {
     const geocodeAndGetStreetView = async () => {
       try {
-        setIsLoading(true);
-        setError(false);
-        
         // Wait for Google Maps API to be loaded and API key to be available
         if (!isGoogleLoaded || !window.google?.maps?.Geocoder || !apiKey) {
-          console.error('Google Maps Geocoder not available or API key missing');
+          console.error('❌ Google Maps Geocoder not available or API key missing');
           setError(true);
+          setIsLoading(false);
           return;
         }
 
@@ -78,25 +86,35 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
             const lng = location.lng();
             
             // Try Street View Static API first
-            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90`;
+            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90&t=${Date.now()}`;
             
-            // Test if the image loads successfully
+            // Test if the image loads successfully with timeout
             const img = new Image();
+            const timeoutId = setTimeout(() => {
+              img.onload = null;
+              img.onerror = null;
+              console.error('❌ Street View image load timeout for address:', address);
+              handleImageError();
+            }, 10000); // 10 second timeout
+            
             img.onload = () => {
+              clearTimeout(timeoutId);
               setImageUrl(streetViewUrl);
+              setIsLoading(false);
             };
-            img.onerror = () => {
-              // If Street View fails, fall back to a map preview
-              console.log('Street View not available, using map preview');
-              const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=16&size=400x240&markers=color:red%7C${lat},${lng}&key=${apiKey}`;
-              setImageUrl(mapUrl);
+            
+            img.onerror = (error) => {
+              clearTimeout(timeoutId);
+              console.error('❌ Street View image failed to load for address:', address);
+              handleImageError();
             };
+            
             img.src = streetViewUrl;
           } else {
-            console.error('Geocoding failed:', status);
+            console.error('Geocoding failed for address:', address, 'Status:', status);
             setError(true);
+            setIsLoading(false);
           }
-          setIsLoading(false);
         });
       } catch (error) {
         console.error('Geocoding error for street view:', error);
@@ -105,19 +123,41 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
       }
     };
 
+    const handleImageError = () => {
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Retrying image load for ${address} (attempt ${retryCount + 1}/${maxRetries})`);
+        setRetryCount(prev => prev + 1);
+        // Retry after a short delay
+        setTimeout(() => {
+          geocodeAndGetStreetView();
+        }, 1000 * (retryCount + 1)); // Exponential backoff
+      } else {
+        console.error('❌ All retry attempts failed for address:', address);
+        setError(true);
+        setIsLoading(false);
+      }
+    };
+
     if (address && isGoogleLoaded && apiKey) {
       geocodeAndGetStreetView();
     }
-  }, [address, isGoogleLoaded, apiKey]);
+  }, [address, isGoogleLoaded, apiKey, retryCount]);
 
+  // Show loading state
   if (isLoading) {
     return (
       <div className={`${className} bg-gray-100 flex items-center justify-center`}>
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+          {retryCount > 0 && (
+            <div className="text-xs text-gray-500">Retrying... ({retryCount}/{maxRetries})</div>
+          )}
+        </div>
       </div>
     );
   }
 
+  // Show error state
   if (error || !imageUrl) {
     return (
       <div className={`${className} bg-gray-100 flex items-center justify-center`}>
@@ -132,19 +172,21 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
     );
   }
 
+  // Background image mode
   if (isBackground) {
     return (
       <div 
         className={`${className} bg-cover bg-center`}
         style={{
           backgroundImage: `url(${imageUrl})`,
-          backgroundPosition: 'center center', // Start with center, we can adjust later
-          minHeight: '200px' // Ensure minimum height for background to be visible
+          backgroundPosition: 'center center',
+          minHeight: '200px'
         }}
       />
     );
   }
 
+  // Regular image mode
   return (
     <a
       href={imageUrl}
@@ -202,7 +244,7 @@ export function StaffDashboard() {
   const [showClockInModal, setShowClockInModal] = useState(false);
   const [showClockOutModal, setShowClockOutModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const refreshIntervalRef = useRef<number | null>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (loading) return;
