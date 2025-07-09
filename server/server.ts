@@ -69,6 +69,29 @@ export function createServer() {
     res.json({ apiKey });
   });
 
+  // New endpoint for Google Maps initialization
+  app.get("/api/google-maps-init", (req: Request, res: Response) => {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    console.log('🗺️ Google Maps Init Debug:', {
+      hasApiKey: !!apiKey,
+      keyLength: apiKey?.length || 0,
+      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined'
+    });
+    
+    if (!apiKey) {
+      return res.status(500).json({ 
+        success: false, 
+        error: "Google Maps API key not configured" 
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      apiKey,
+      scriptUrl: `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&loading=async`
+    });
+  });
+
   // Protected routes
   app.use("/api/auth", authRouter);
   app.use("/api/staff", authMiddleware, staffRouter);

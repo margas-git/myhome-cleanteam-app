@@ -8,33 +8,37 @@ export async function getGoogleMapsApiKey(): Promise<string> {
     return cachedApiKey;
   }
 
-  // Always fetch from server to ensure we get the correct API key
-  // This avoids issues with build-time environment variables
-  console.log('🔑 Fetching Google Maps API key from server...');
+  // Use the new initialization endpoint for better reliability
+  console.log('🗺️ Initializing Google Maps from server...');
   
   try {
-    const response = await fetch('/api/google-maps-api-key', {
+    const response = await fetch('/api/google-maps-init', {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(10000) // Longer timeout for initialization
     });
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch API key: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to initialize Google Maps: ${response.status} ${response.statusText}`);
     }
     
     const data = await response.json();
+    
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to initialize Google Maps');
+    }
+    
     cachedApiKey = data.apiKey;
     
     if (cachedApiKey) {
-      console.log('✅ Google Maps API Key loaded from server');
+      console.log('✅ Google Maps initialized successfully with API key');
     }
     
     return cachedApiKey || '';
   } catch (error) {
-    console.error('❌ Failed to fetch Google Maps API key:', error);
+    console.error('❌ Failed to initialize Google Maps:', error);
     return '';
   }
 }

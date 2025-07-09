@@ -85,8 +85,26 @@ export function useGoogleMaps(apiKey?: string) {
         const failedScripts = document.querySelectorAll(`script[src*="maps.googleapis.com"]`);
         failedScripts.forEach(script => script.remove());
 
+        // Get the script URL from the server to ensure it's properly configured
+        const initResponse = await fetch('/api/google-maps-init', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        if (!initResponse.ok) {
+          throw new Error(`Failed to initialize Google Maps: ${initResponse.status}`);
+        }
+        
+        const initData = await initResponse.json();
+        if (!initData.success) {
+          throw new Error(initData.error || 'Failed to initialize Google Maps');
+        }
+        
         const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places,geometry&loading=async`;
+        script.src = initData.scriptUrl;
         script.async = true;
         script.defer = true;
         
