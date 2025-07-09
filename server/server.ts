@@ -15,7 +15,7 @@ export function createServer() {
 
   app.use(helmet());
   // CORS configuration for production
-  const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam-app-production.up.railway.app";
+  const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam.up.railway.app";
   
   app.use(cors({ 
     origin: corsOrigin, 
@@ -38,11 +38,11 @@ export function createServer() {
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
 
-  // Serve static files from the built client
+  // Serve static files from the built client (always, for debugging)
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  const staticPath = resolve(__dirname, "../../client/dist");
-  const indexPath = resolve(__dirname, "../../client/dist/index.html");
+  const staticPath = resolve(__dirname, "../client/dist");
+  const indexPath = resolve(__dirname, "../client/dist/index.html");
   
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);

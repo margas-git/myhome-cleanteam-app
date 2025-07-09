@@ -77,10 +77,21 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
             const lat = location.lat();
             const lng = location.lng();
             
-            // Let Google automatically choose the best view of the house
-            // Remove heading parameter to use default optimal view
+            // Try Street View Static API first
             const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90`;
-            setImageUrl(streetViewUrl);
+            
+            // Test if the image loads successfully
+            const img = new Image();
+            img.onload = () => {
+              setImageUrl(streetViewUrl);
+            };
+            img.onerror = () => {
+              // If Street View fails, fall back to a map preview
+              console.log('Street View not available, using map preview');
+              const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=16&size=400x240&markers=color:red%7C${lat},${lng}&key=${apiKey}`;
+              setImageUrl(mapUrl);
+            };
+            img.src = streetViewUrl;
           } else {
             console.error('Geocoding failed:', status);
             setError(true);
@@ -114,7 +125,8 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
           <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
-          <div className="text-xs">Street view unavailable</div>
+          <div className="text-xs">Location preview unavailable</div>
+          <div className="text-xs text-gray-400">Street View API may not be enabled</div>
         </div>
       </div>
     );
