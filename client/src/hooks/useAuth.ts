@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { buildApiUrl } from "../config/api";
 
 interface User {
@@ -12,6 +13,7 @@ interface User {
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [, setLocation] = useLocation();
 
   useEffect(() => {
     checkAuth();
@@ -44,6 +46,7 @@ export function useAuth() {
         credentials: "include"
       });
       setUser(null);
+      setLocation("/login");
     } catch (error) {
       console.error("Logout failed:", error);
     }
