@@ -10,8 +10,15 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY client/package.json ./client/
 
-# Install all dependencies (including dev dependencies)
+# Install root dependencies (including dev dependencies)
 RUN npm ci
+
+# Install client dependencies
+WORKDIR /app/client
+RUN npm ci
+
+# Return to app root
+WORKDIR /app
 
 # Copy source code
 COPY . .
@@ -24,4 +31,4 @@ ENV NODE_ENV=development
 ENV PORT=4000
 
 # Start development server with hot reloading
-CMD ["npm", "run", "dev"] 
+CMD ["npm", "run", "server:dev"] 
