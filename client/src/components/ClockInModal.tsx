@@ -277,7 +277,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
                 <div className="p-3 border rounded-lg bg-gray-50">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="font-medium text-red-600">{selectedCustomer.name}</div>
+                      <div className="font-medium text-black">{selectedCustomer.name}</div>
                       <div className="text-sm text-gray-600">{selectedCustomer.address ? formatAddress(selectedCustomer.address) : ''}</div>
                       {allottedMinutes && (
                         <div className="text-xs text-blue-600 mt-1">Allowed time target: <span className="font-semibold">{allottedMinutes} min</span></div>
@@ -350,44 +350,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
                     />
                   </div>
                 </div>
-                {/* Street View Image */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                    Street View
-                  </label>
-                  <div className="border rounded-lg overflow-hidden">
-                    <StreetViewImage address={selectedCustomer.address} className="w-full h-48" />
-                  </div>
-                </div>
-                
-                {/* TEST: Simple Street View Image */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                      <polyline points="9,22 9,12 15,12 15,22"></polyline>
-                    </svg>
-                    TEST: Direct Street View Image
-                  </label>
-                  <div className="border rounded-lg overflow-hidden">
-                    <img
-                      src="https://maps.googleapis.com/maps/api/streetview?size=400x240&location=-37.95001484499761,145.05080907740614&key=AIzaSyDhogaiA91DQLL0spIyywjBsB7An04TGhI"
-                      alt="Test Street View"
-                      className="w-full h-48 object-cover"
-                      onError={(e) => {
-                        console.error('Street View image failed to load:', e);
-                        e.currentTarget.style.display = 'none';
-                      }}
-                      onLoad={() => {
-                        console.log('Street View image loaded successfully');
-                      }}
-                    />
-                  </div>
-                </div>
+                {/* Street View images removed as requested */}
               </>
             )}
 
