@@ -135,19 +135,7 @@ export function createServer() {
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
   
-  // Debug: Check what assets are available
-  const assetsPath = resolve(staticPath, 'assets');
-  if (existsSync(assetsPath)) {
-    console.log("Assets directory exists at:", assetsPath);
-    try {
-      const files = readdirSync(assetsPath);
-      console.log("Available assets:", files);
-    } catch (error) {
-      console.log("Error reading assets directory:", error);
-    }
-  } else {
-    console.log("Assets directory does not exist at:", assetsPath);
-  }
+
   
   // Serve static files from the client dist directory
   app.use(express.static(staticPath));
@@ -170,25 +158,7 @@ export function createServer() {
         return;
       }
       
-      console.log("Serving React app for path:", req.path);
-      console.log("Using index file:", indexPath);
-      console.log("RAILWAY DEBUG: Checking which HTML file is being served");
-      
-      // Check if the index file exists and log its first few lines
-      if (existsSync(indexPath)) {
-        try {
-          const content = readFileSync(indexPath, 'utf8');
-          const lines = content.split('\n').slice(0, 15);
-          console.log("Index file contents (first 15 lines):");
-          lines.forEach((line: string, i: number) => {
-            console.log(`${i + 1}: ${line}`);
-          });
-        } catch (error) {
-          console.log("Error reading index file:", error);
-        }
-      } else {
-        console.log("Index file does not exist at:", indexPath);
-      }
+
       
       res.sendFile(indexPath);
     }
