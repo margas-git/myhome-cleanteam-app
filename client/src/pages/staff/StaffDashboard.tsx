@@ -50,7 +50,14 @@ interface CompletedJob {
 }
 
 // Sequential StreetViewImage loader
-function StreetViewImage({ address, className = "", isBackground = false, loadNext }: { address: string; className?: string; isBackground?: boolean; loadNext?: () => void }) {
+function StreetViewImage({ address, className = "", isBackground = false, loadNext, latitude, longitude }: { 
+  address: string; 
+  className?: string; 
+  isBackground?: boolean; 
+  loadNext?: () => void;
+  latitude?: string;
+  longitude?: string;
+}) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -62,11 +69,45 @@ function StreetViewImage({ address, className = "", isBackground = false, loadNe
     setError(false);
     setIsLoading(true);
     hasStarted.current = false;
-  }, [address]);
+  }, [address, latitude, longitude]);
 
   useEffect(() => {
     if (!address || !isGoogleLoaded || !apiKey || hasStarted.current) return;
     hasStarted.current = true;
+
+    // If we have coordinates, use them directly (much faster!)
+    if (latitude && longitude) {
+      const lat = parseFloat(latitude);
+      const lng = parseFloat(longitude);
+      
+      if (!isNaN(lat) && !isNaN(lng)) {
+        const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90`;
+        const img = new window.Image();
+        const timeoutId = setTimeout(() => {
+          img.onload = null;
+          img.onerror = null;
+          setError(true);
+          setIsLoading(false);
+          if (loadNext) loadNext();
+        }, 10000);
+        img.onload = () => {
+          clearTimeout(timeoutId);
+          setImageUrl(streetViewUrl);
+          setIsLoading(false);
+          if (loadNext) loadNext();
+        };
+        img.onerror = () => {
+          clearTimeout(timeoutId);
+          setError(true);
+          setIsLoading(false);
+          if (loadNext) loadNext();
+        };
+        img.src = streetViewUrl;
+        return;
+      }
+    }
+
+    // Fallback to geocoding if no coordinates available
     const geocoder = new window.google.maps.Geocoder();
     geocoder.geocode({ address: address + ', Australia' }, (results: any[], status: string) => {
       if (status === 'OK' && results[0]) {
@@ -101,7 +142,7 @@ function StreetViewImage({ address, className = "", isBackground = false, loadNe
         if (loadNext) loadNext();
       }
     });
-  }, [address, isGoogleLoaded, apiKey, loadNext]);
+  }, [address, latitude, longitude, isGoogleLoaded, apiKey, loadNext]);
 
   if (isLoading) {
     return (
@@ -703,6 +744,8 @@ export function StaffDashboard() {
                       {idx <= currentImageIndex ? (
                         <StreetViewImage
                           address={customer.address}
+                          latitude={customer.latitude}
+                          longitude={customer.longitude}
                           className="relative w-full h-full"
                           loadNext={() => setCurrentImageIndex(i => i === idx ? i + 1 : i)}
                         />
