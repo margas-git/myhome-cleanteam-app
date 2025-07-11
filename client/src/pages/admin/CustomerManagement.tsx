@@ -26,6 +26,48 @@ interface Customer {
   createdAt: string;
 }
 
+// Reusable geocoding function
+const geocodeAddress = (address: string): Promise<{ latitude: number; longitude: number } | null> => {
+  return new Promise((resolve) => {
+    console.log('🔍 Starting geocoding for address:', address);
+    console.log('🔍 Google Maps available:', !!window.google?.maps?.Geocoder);
+    
+    if (!window.google?.maps?.Geocoder) {
+      console.error('❌ Google Maps Geocoder not available');
+      resolve(null);
+      return;
+    }
+
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      const searchAddress = address + ', Australia';
+      console.log('🔍 Searching for:', searchAddress);
+      
+      geocoder.geocode({ address: searchAddress }, (results: any[], status: string) => {
+        console.log('🔍 Geocoding result:', { status, resultsCount: results?.length });
+        
+        if (status === 'OK' && results[0]) {
+          const location = results[0].geometry.location;
+          const lat = location.lat();
+          const lng = location.lng();
+          console.log('✅ Location found:', { lat, lng });
+          
+          resolve({
+            latitude: lat,
+            longitude: lng
+          });
+        } else {
+          console.error('❌ Geocoding failed:', status);
+          resolve(null);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Google Maps geocoding error:', error);
+      resolve(null);
+    }
+  });
+};
+
 export function CustomerManagement() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,14 +130,42 @@ export function CustomerManagement() {
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    setSaving(true);
     try {
+      // Geocode the address if Google Maps is loaded
+      let latitude = "-37.8136"; // Default Melbourne coordinates
+      let longitude = "144.9631";
+      
+      console.log('🔍 Adding customer with address:', newCustomer.address);
+      console.log('🔍 Google Maps loaded:', isGoogleLoaded);
+      
+      if (isGoogleLoaded && newCustomer.address) {
+        console.log('🔍 Geocoding address for new customer:', newCustomer.address);
+        const coordinates = await geocodeAddress(newCustomer.address);
+        if (coordinates) {
+          latitude = coordinates.latitude.toString();
+          longitude = coordinates.longitude.toString();
+          console.log('✅ Geocoded coordinates:', { latitude, longitude });
+        } else {
+          console.log('❌ Geocoding failed, using default coordinates');
+        }
+      } else {
+        console.log('❌ Google Maps not loaded or no address, using default coordinates');
+      }
+
+      console.log('📤 Sending customer data with coordinates:', { latitude, longitude });
+
       const response = await fetch(buildApiUrl("/api/admin/customers"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         credentials: "include",
-        body: JSON.stringify(newCustomer)
+        body: JSON.stringify({
+          ...newCustomer,
+          latitude,
+          longitude
+        })
       });
       
       if (response.ok) {
@@ -117,6 +187,8 @@ export function CustomerManagement() {
     } catch (error) {
       console.error("Failed to add customer:", error);
       alert("Failed to add customer");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -174,6 +246,31 @@ export function CustomerManagement() {
     
     setSaving(true);
     try {
+      // Geocode the address if it has changed and Google Maps is loaded
+      let latitude = editingCustomer.latitude;
+      let longitude = editingCustomer.longitude;
+      
+      console.log('🔍 Updating customer with address:', editCustomer.address);
+      console.log('🔍 Original address:', editingCustomer.address);
+      console.log('🔍 Google Maps loaded:', isGoogleLoaded);
+      console.log('🔍 Address changed:', editCustomer.address !== editingCustomer.address);
+      
+      if (isGoogleLoaded && editCustomer.address !== editingCustomer.address) {
+        console.log('🔍 Geocoding updated address for customer:', editCustomer.address);
+        const coordinates = await geocodeAddress(editCustomer.address);
+        if (coordinates) {
+          latitude = coordinates.latitude.toString();
+          longitude = coordinates.longitude.toString();
+          console.log('✅ Updated geocoded coordinates:', { latitude, longitude });
+        } else {
+          console.log('❌ Geocoding failed, keeping original coordinates');
+        }
+      } else {
+        console.log('❌ Google Maps not loaded or address unchanged, keeping original coordinates');
+      }
+
+      console.log('📤 Sending updated customer data with coordinates:', { latitude, longitude });
+
       const response = await fetch(buildApiUrl(`/api/admin/customers/${editingCustomer.id}`), {
         method: "PUT",
         headers: {
@@ -183,8 +280,8 @@ export function CustomerManagement() {
         body: JSON.stringify({
           ...editCustomer,
           active: editingCustomer.active, // Keep current active status
-          latitude: editingCustomer.latitude, // Keep current coordinates
-          longitude: editingCustomer.longitude
+          latitude,
+          longitude
         })
       });
       
@@ -262,15 +359,37 @@ export function CustomerManagement() {
                 </>
               )}
             </button>
-            <button
-              onClick={handleCalculateMetrics}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Calculate Metrics
-            </button>
+                      <button
+            onClick={handleCalculateMetrics}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Calculate Metrics
+          </button>
+          <button
+            onClick={async () => {
+              console.log('🧪 Testing geocoding...');
+              console.log('🔍 Google Maps loaded:', isGoogleLoaded);
+              if (isGoogleLoaded) {
+                const testAddress = "123 Collins Street, Melbourne";
+                console.log('🧪 Testing with address:', testAddress);
+                const coords = await geocodeAddress(testAddress);
+                console.log('🧪 Test result:', coords);
+                if (coords) {
+                  alert(`Test successful! Coordinates: ${coords.latitude}, ${coords.longitude}`);
+                } else {
+                  alert('Test failed - geocoding returned null');
+                }
+              } else {
+                alert('Google Maps not loaded');
+              }
+            }}
+            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            🧪 Test Geocoding
+          </button>
           </div>
           <button
             onClick={() => setShowAddForm(true)}
@@ -565,6 +684,23 @@ export function CustomerManagement() {
                     className="mt-2"
                     isGoogleLoaded={isGoogleLoaded}
                   />
+                  {/* Coordinates Display */}
+                  <div className="mt-2 p-3 bg-gray-50 rounded-md">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Current Coordinates</div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Latitude:</span>
+                        <span className="ml-2 font-mono text-gray-800">{editingCustomer.latitude}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Longitude:</span>
+                        <span className="ml-2 font-mono text-gray-800">{editingCustomer.longitude}</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      These coordinates will be updated when you save changes to the address
+                    </div>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>

@@ -1,0 +1,35 @@
+# Use Node.js 18 as base image for development
+FROM node:18-alpine
+
+# Install dependencies for native modules
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+COPY client/package.json ./client/
+COPY client/package-lock.json ./client/
+
+# Install root dependencies (including dev dependencies)
+RUN npm ci
+
+# Install client dependencies
+WORKDIR /app/client
+RUN npm ci
+
+# Return to app root
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Expose ports for both server and client
+EXPOSE 4000 5173
+
+# Set environment variables
+ENV NODE_ENV=development
+ENV PORT=4000
+
+# Start development server with hot reloading
+CMD ["npm", "run", "server:dev"] 

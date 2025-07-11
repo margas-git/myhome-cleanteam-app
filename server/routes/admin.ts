@@ -117,7 +117,7 @@ router.get("/customers", async (req: Request, res: Response) => {
 // Create new customer
 router.post("/customers", async (req: Request, res: Response) => {
   try {
-    const { name, address, phone, email, notes, price, cleanFrequency } = req.body;
+    const { name, address, phone, email, notes, price, cleanFrequency, latitude, longitude } = req.body;
 
     if (!name || !address) {
       return res.status(400).json({
@@ -126,9 +126,9 @@ router.post("/customers", async (req: Request, res: Response) => {
       });
     }
 
-    // Default coordinates to Melbourne if not provided (for geocoding later)
-    const latitude = "-37.8136";
-    const longitude = "144.9631";
+    // Use provided coordinates or default to Melbourne
+    const customerLatitude = latitude || "-37.8136";
+    const customerLongitude = longitude || "144.9631";
 
     // Use provided price or default to 250
     const customerPrice = price ? parseInt(price) : 250;
@@ -138,8 +138,8 @@ router.post("/customers", async (req: Request, res: Response) => {
       .values({
         name,
         address,
-        latitude,
-        longitude,
+        latitude: customerLatitude,
+        longitude: customerLongitude,
         phone: phone || null,
         email: email || null,
         notes: notes || null,
