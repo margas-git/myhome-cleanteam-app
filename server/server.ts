@@ -104,16 +104,13 @@ export function createServer() {
   
   // In production, files are copied to /app/client/dist
   // In development, files are in ../client/dist
-  const staticPath = process.env.NODE_ENV === 'production' 
-    ? resolve(__dirname, "../client/dist")
-    : resolve(__dirname, "../client/dist");
-  const indexPath = process.env.NODE_ENV === 'production'
-    ? resolve(__dirname, "../client/dist/index.html")
-    : resolve(__dirname, "../client/dist/index.html");
+  const staticPath = resolve(__dirname, "../client/dist");
+  const indexPath = resolve(__dirname, "../client/dist/index.html");
   
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
   console.log("NODE_ENV:", process.env.NODE_ENV);
+  console.log("__dirname:", __dirname);
   
   // Debug: Check if files exist
   console.log("Static path exists:", existsSync(staticPath));
@@ -126,6 +123,19 @@ export function createServer() {
       console.log("Static directory contents:", files);
     } catch (err) {
       console.log("Error reading static directory:", err);
+    }
+  } else {
+    // Try to list the parent directory to see what's available
+    const parentDir = resolve(__dirname, "../");
+    console.log("Parent directory:", parentDir);
+    console.log("Parent directory exists:", existsSync(parentDir));
+    if (existsSync(parentDir)) {
+      try {
+        const parentFiles = readdirSync(parentDir);
+        console.log("Parent directory contents:", parentFiles);
+      } catch (err) {
+        console.log("Error reading parent directory:", err);
+      }
     }
   }
 
