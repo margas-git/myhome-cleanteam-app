@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -100,8 +101,36 @@ export function createServer() {
   // Serve static files from the built client (always, for debugging)
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  const staticPath = resolve(__dirname, "../client/dist");
-  const indexPath = resolve(__dirname, "../client/dist/index.html");
+  
+  // Try multiple possible paths for static files
+  const possibleStaticPaths = [
+    resolve(__dirname, "../client/dist"),           // Local Docker
+    resolve(__dirname, "../../client/dist"),        // Railway build
+    resolve(process.cwd(), "client/dist"),          // Absolute from project root
+    resolve(process.cwd(), "dist/client/dist")      // Alternative Railway structure
+  ];
+  
+  const possibleIndexPaths = [
+    resolve(__dirname, "../client/dist/index.html"),
+    resolve(__dirname, "../../client/dist/index.html"),
+    resolve(process.cwd(), "client/dist/index.html"),
+    resolve(process.cwd(), "dist/client/dist/index.html")
+  ];
+  
+  // Find the first path that exists
+  let staticPath = possibleStaticPaths[0];
+  let indexPath = possibleIndexPaths[0];
+  
+  for (let i = 0; i < possibleStaticPaths.length; i++) {
+    if (existsSync(possibleStaticPaths[i])) {
+      staticPath = possibleStaticPaths[i];
+      indexPath = possibleIndexPaths[i];
+      console.log(`Found static files at: ${staticPath}`);
+      break;
+    } else {
+      console.log(`Path not found: ${possibleStaticPaths[i]}`);
+    }
+  }
   
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
