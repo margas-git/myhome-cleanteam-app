@@ -102,10 +102,14 @@ export function createServer() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
   
-  // In production, files are copied to /app/client/dist
+  // In production, server runs from /app/dist/server but files are in /app/client/dist
   // In development, files are in ../client/dist
-  const staticPath = resolve(__dirname, "../client/dist");
-  const indexPath = resolve(__dirname, "../client/dist/index.html");
+  const staticPath = process.env.NODE_ENV === 'production'
+    ? resolve(__dirname, "../../client/dist")  // Go up two levels from /app/dist/server to /app, then into client/dist
+    : resolve(__dirname, "../client/dist");
+  const indexPath = process.env.NODE_ENV === 'production'
+    ? resolve(__dirname, "../../client/dist/index.html")
+    : resolve(__dirname, "../client/dist/index.html");
   
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
