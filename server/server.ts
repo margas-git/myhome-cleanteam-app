@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { existsSync, readdirSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -100,12 +101,34 @@ export function createServer() {
   // Serve static files from the built client (always, for debugging)
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  const staticPath = resolve(__dirname, "../client/dist");
-  const indexPath = resolve(__dirname, "../client/dist/index.html");
+  
+  // In production, files are copied to /app/client/dist
+  // In development, files are in ../client/dist
+  const staticPath = process.env.NODE_ENV === 'production' 
+    ? resolve(__dirname, "../client/dist")
+    : resolve(__dirname, "../client/dist");
+  const indexPath = process.env.NODE_ENV === 'production'
+    ? resolve(__dirname, "../client/dist/index.html")
+    : resolve(__dirname, "../client/dist/index.html");
   
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
+  console.log("NODE_ENV:", process.env.NODE_ENV);
   
+  // Debug: Check if files exist
+  console.log("Static path exists:", existsSync(staticPath));
+  console.log("Index file exists:", existsSync(indexPath));
+  
+  // List contents of the static directory if it exists
+  if (existsSync(staticPath)) {
+    try {
+      const files = readdirSync(staticPath);
+      console.log("Static directory contents:", files);
+    } catch (err) {
+      console.log("Error reading static directory:", err);
+    }
+  }
+
   // Serve static files with proper MIME types
   app.use(express.static(staticPath, {
     setHeaders: (res, path) => {
