@@ -159,9 +159,17 @@ export function createServer() {
   app.use('/manifest.webmanifest', express.static(resolve(staticPath, 'manifest.webmanifest')));
   app.use('/icon-192x192.png', express.static(resolve(staticPath, 'icon-192x192.png')));
 
-  // Serve the React app for all non-API routes
+  // Serve the React app for all non-API routes (but only if the file doesn't exist as a static file)
   app.get("*", (req: Request, res: Response) => {
     if (!req.path.startsWith("/api")) {
+      // Check if the requested file exists as a static file first
+      const requestedFile = resolve(staticPath, req.path.substring(1));
+      if (existsSync(requestedFile)) {
+        // If the file exists, serve it directly
+        res.sendFile(requestedFile);
+        return;
+      }
+      
       console.log("Serving React app for path:", req.path);
       console.log("Using index file:", indexPath);
       console.log("RAILWAY DEBUG: Checking which HTML file is being served");
