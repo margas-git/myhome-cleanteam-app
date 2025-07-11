@@ -49,118 +49,73 @@ interface CompletedJob {
   autoLunchDeducted: boolean;
 }
 
-// Street View Component that handles async geocoding
-function StreetViewImage({ address, className = "", isBackground = false }: { address: string; className?: string; isBackground?: boolean }) {
+// Sequential StreetViewImage loader
+function StreetViewImage({ address, className = "", isBackground = false, loadNext }: { address: string; className?: string; isBackground?: boolean; loadNext?: () => void }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
   const { isLoaded: isGoogleLoaded, apiKey } = useGoogleMaps();
-  const maxRetries = 3;
+  const hasStarted = useRef(false);
 
   useEffect(() => {
-    // Reset state when address changes
     setImageUrl(null);
     setError(false);
-    setRetryCount(0);
     setIsLoading(true);
+    hasStarted.current = false;
   }, [address]);
 
   useEffect(() => {
-    const geocodeAndGetStreetView = async () => {
-      try {
-        // Wait for Google Maps API to be loaded and API key to be available
-        if (!isGoogleLoaded || !window.google?.maps?.Geocoder || !apiKey) {
-          console.error('❌ Google Maps Geocoder not available or API key missing');
+    if (!address || !isGoogleLoaded || !apiKey || hasStarted.current) return;
+    hasStarted.current = true;
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ address: address + ', Australia' }, (results: any[], status: string) => {
+      if (status === 'OK' && results[0]) {
+        const location = results[0].geometry.location;
+        const lat = location.lat();
+        const lng = location.lng();
+        const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90`;
+        const img = new window.Image();
+        const timeoutId = setTimeout(() => {
+          img.onload = null;
+          img.onerror = null;
           setError(true);
           setIsLoading(false);
-          return;
-        }
-
-        const geocoder = new window.google.maps.Geocoder();
-        
-        geocoder.geocode({ address: address + ', Australia' }, (results: any[], status: string) => {
-          if (status === 'OK' && results[0]) {
-            const location = results[0].geometry.location;
-            const lat = location.lat();
-            const lng = location.lng();
-            
-            // Try Street View Static API first
-            const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x240&location=${lat},${lng}&key=${apiKey}&pitch=0&fov=90&t=${Date.now()}`;
-            
-            // Test if the image loads successfully with timeout
-            const img = new Image();
-            const timeoutId = setTimeout(() => {
-              img.onload = null;
-              img.onerror = null;
-              console.error('❌ Street View image load timeout for address:', address);
-              handleImageError();
-            }, 10000); // 10 second timeout
-            
-            img.onload = () => {
-              clearTimeout(timeoutId);
-              setImageUrl(streetViewUrl);
-              setIsLoading(false);
-            };
-            
-            img.onerror = (error) => {
-              clearTimeout(timeoutId);
-              console.error('❌ Street View image failed to load for address:', address);
-              handleImageError();
-            };
-            
-            img.src = streetViewUrl;
-          } else {
-            console.error('Geocoding failed for address:', address, 'Status:', status);
-            setError(true);
-            setIsLoading(false);
-          }
-        });
-      } catch (error) {
-        console.error('Geocoding error for street view:', error);
-        setError(true);
-        setIsLoading(false);
-      }
-    };
-
-    const handleImageError = () => {
-      if (retryCount < maxRetries) {
-        console.log(`🔄 Retrying image load for ${address} (attempt ${retryCount + 1}/${maxRetries})`);
-        setRetryCount(prev => prev + 1);
-        // Retry after a short delay
-        setTimeout(() => {
-          geocodeAndGetStreetView();
-        }, 1000 * (retryCount + 1)); // Exponential backoff
+          if (loadNext) loadNext();
+        }, 10000);
+        img.onload = () => {
+          clearTimeout(timeoutId);
+          setImageUrl(streetViewUrl);
+          setIsLoading(false);
+          if (loadNext) loadNext();
+        };
+        img.onerror = () => {
+          clearTimeout(timeoutId);
+          setError(true);
+          setIsLoading(false);
+          if (loadNext) loadNext();
+        };
+        img.src = streetViewUrl;
       } else {
-        console.error('❌ All retry attempts failed for address:', address);
         setError(true);
         setIsLoading(false);
+        if (loadNext) loadNext();
       }
-    };
+    });
+  }, [address, isGoogleLoaded, apiKey, loadNext]);
 
-    if (address && isGoogleLoaded && apiKey) {
-      geocodeAndGetStreetView();
-    }
-  }, [address, isGoogleLoaded, apiKey, retryCount]);
-
-  // Show loading state
   if (isLoading) {
     return (
-      <div className={`${className} bg-gray-100 flex items-center justify-center`}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
-          {retryCount > 0 && (
-            <div className="text-xs text-gray-500">Retrying... ({retryCount}/{maxRetries})</div>
-          )}
+      <div className={`${className} bg-gray-100 flex items-center justify-center relative`} style={{ minHeight: '128px', height: '128px' }}>
+        <div className="flex items-center justify-center w-full h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
         </div>
       </div>
     );
   }
 
-  // Show error state
   if (error || !imageUrl) {
     return (
-      <div className={`${className} bg-gray-100 flex items-center justify-center`}>
+      <div className={`${className} bg-gray-100 flex items-center justify-center`} style={{ minHeight: '200px' }}>
         <div className="text-center text-gray-500">
           <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -172,7 +127,6 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
     );
   }
 
-  // Background image mode
   if (isBackground) {
     return (
       <div 
@@ -186,7 +140,6 @@ function StreetViewImage({ address, className = "", isBackground = false }: { ad
     );
   }
 
-  // Regular image mode
   return (
     <a
       href={imageUrl}
@@ -247,6 +200,7 @@ export function StaffDashboard() {
   const [showClockOutModal, setShowClockOutModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
     if (loading) return;
@@ -742,12 +696,21 @@ export function StaffDashboard() {
             
             {nearbyCustomers.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {nearbyCustomers.map((customer: any) => (
+                {nearbyCustomers.map((customer: any, idx: number) => (
                   <div key={customer.id} className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-200 overflow-hidden group">
-                    {/* Street View Image */}
-                    <div className="relative h-32 bg-gray-100">
-                      <StreetViewImage address={customer.address} className="relative w-full h-full" />
+                    {/* Street View Image - only render if idx <= currentImageIndex */}
+                    <div className="relative h-32 bg-gray-100 flex items-stretch">
+                      {idx <= currentImageIndex ? (
+                        <StreetViewImage
+                          address={customer.address}
+                          className="relative w-full h-full"
+                          loadNext={() => setCurrentImageIndex(i => i === idx ? i + 1 : i)}
+                        />
+                      ) : (
+                        <div className="w-full h-full" style={{ minHeight: '128px' }}></div>
+                      )}
                     </div>
+                    {/* Customer details always visible */}
                     <div className="p-5">
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
