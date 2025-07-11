@@ -4,7 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -135,7 +135,29 @@ export function createServer() {
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
   
+  // Debug: Check what assets are available
+  const assetsPath = resolve(staticPath, 'assets');
+  if (existsSync(assetsPath)) {
+    console.log("Assets directory exists at:", assetsPath);
+    try {
+      const files = readdirSync(assetsPath);
+      console.log("Available assets:", files);
+    } catch (error) {
+      console.log("Error reading assets directory:", error);
+    }
+  } else {
+    console.log("Assets directory does not exist at:", assetsPath);
+  }
+  
+  // Serve static files from the client dist directory
   app.use(express.static(staticPath));
+  
+  // Also serve assets from the assets subdirectory
+  app.use('/assets', express.static(resolve(staticPath, 'assets')));
+  
+  // Serve manifest and icons
+  app.use('/manifest.webmanifest', express.static(resolve(staticPath, 'manifest.webmanifest')));
+  app.use('/icon-192x192.png', express.static(resolve(staticPath, 'icon-192x192.png')));
 
   // Serve the React app for all non-API routes
   app.get("*", (req: Request, res: Response) => {
