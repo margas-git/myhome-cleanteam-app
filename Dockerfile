@@ -7,20 +7,32 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
+# Copy package files for both root and client
 COPY package.json package-lock.json* ./
-RUN npm ci --only=production
+COPY client/package.json client/package-lock.json* ./client/
+
+# Install all dependencies (including dev dependencies for build)
+RUN npm ci
+WORKDIR /app/client
+RUN npm ci
+WORKDIR /app
 
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
+COPY client/package.json client/package-lock.json* ./client/
+
+# Install all dependencies for building
 RUN npm ci
+WORKDIR /app/client
+RUN npm ci
+WORKDIR /app
 
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (this creates the CSS files)
 RUN npm run build
 
 # Production image, copy all the files and run the app
@@ -34,7 +46,7 @@ ENV PORT=4000
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy built application
+# Copy built application with all static files
 COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nextjs:nodejs /app/client/dist ./client/dist
 COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules

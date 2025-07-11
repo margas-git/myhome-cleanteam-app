@@ -4,7 +4,6 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync, readdirSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -101,65 +100,27 @@ export function createServer() {
   // Serve static files from the built client (always, for debugging)
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  
-  // Try multiple possible paths for static files
-  const possibleStaticPaths = [
-    resolve(__dirname, "../client/dist"),           // Local Docker
-    resolve(__dirname, "../../client/dist"),        // Railway build
-    resolve(process.cwd(), "client/dist"),          // Absolute from project root
-    resolve(process.cwd(), "dist/client/dist")      // Alternative Railway structure
-  ];
-  
-  const possibleIndexPaths = [
-    resolve(__dirname, "../client/dist/index.html"),
-    resolve(__dirname, "../../client/dist/index.html"),
-    resolve(process.cwd(), "client/dist/index.html"),
-    resolve(process.cwd(), "dist/client/dist/index.html")
-  ];
-  
-  // Find the first path that exists
-  let staticPath = possibleStaticPaths[0];
-  let indexPath = possibleIndexPaths[0];
-  
-  for (let i = 0; i < possibleStaticPaths.length; i++) {
-    if (existsSync(possibleStaticPaths[i])) {
-      staticPath = possibleStaticPaths[i];
-      indexPath = possibleIndexPaths[i];
-      console.log(`Found static files at: ${staticPath}`);
-      break;
-    } else {
-      console.log(`Path not found: ${possibleStaticPaths[i]}`);
-    }
-  }
+  const staticPath = resolve(__dirname, "../client/dist");
+  const indexPath = resolve(__dirname, "../client/dist/index.html");
   
   console.log("Static files path:", staticPath);
   console.log("Index file path:", indexPath);
   
+  // Serve static files with proper MIME types
+  app.use(express.static(staticPath, {
+    setHeaders: (res, path) => {
+      if (path.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css');
+      } else if (path.endsWith('.js')) {
+        res.setHeader('Content-Type', 'application/javascript');
+      }
+    }
+  }));
 
-  
-  // Serve static files from the client dist directory
-  app.use(express.static(staticPath));
-  
-  // Also serve assets from the assets subdirectory
-  app.use('/assets', express.static(resolve(staticPath, 'assets')));
-  
-  // Serve manifest and icons
-  app.use('/manifest.webmanifest', express.static(resolve(staticPath, 'manifest.webmanifest')));
-  app.use('/icon-192x192.png', express.static(resolve(staticPath, 'icon-192x192.png')));
-
-  // Serve the React app for all non-API routes (but only if the file doesn't exist as a static file)
+  // Serve the React app for all non-API routes
   app.get("*", (req: Request, res: Response) => {
     if (!req.path.startsWith("/api")) {
-      // Check if the requested file exists as a static file first
-      const requestedFile = resolve(staticPath, req.path.substring(1));
-      if (existsSync(requestedFile)) {
-        // If the file exists, serve it directly
-        res.sendFile(requestedFile);
-        return;
-      }
-      
-
-      
+      console.log("Serving React app for path:", req.path);
       res.sendFile(indexPath);
     }
   });
