@@ -142,6 +142,7 @@ export function createServer() {
     if (!req.path.startsWith("/api")) {
       console.log("Serving React app for path:", req.path);
       console.log("Using index file:", indexPath);
+      console.log("RAILWAY DEBUG: Checking which HTML file is being served");
       
       // Check if the index file exists and log its first few lines
       if (existsSync(indexPath)) {
