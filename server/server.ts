@@ -55,6 +55,12 @@ export function createServer() {
   app.use(express.json());
   app.use(cookieParser());
 
+  // Log all requests for debugging
+  app.use((req: Request, res: Response, next) => {
+    console.log(`${req.method} ${req.path}`);
+    next();
+  });
+
   // Health check
   app.get("/api/health", (_req: Request, res: Response) => res.json({ success: true, data: "ok" }));
 
@@ -148,8 +154,10 @@ export function createServer() {
     setHeaders: (res, path) => {
       if (path.endsWith('.css')) {
         res.setHeader('Content-Type', 'text/css');
+        console.log('Serving CSS file:', path);
       } else if (path.endsWith('.js')) {
         res.setHeader('Content-Type', 'application/javascript');
+        console.log('Serving JS file:', path);
       }
     }
   }));
