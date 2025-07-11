@@ -4,7 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -141,6 +141,24 @@ export function createServer() {
   app.get("*", (req: Request, res: Response) => {
     if (!req.path.startsWith("/api")) {
       console.log("Serving React app for path:", req.path);
+      console.log("Using index file:", indexPath);
+      
+      // Check if the index file exists and log its first few lines
+      if (existsSync(indexPath)) {
+        try {
+          const content = readFileSync(indexPath, 'utf8');
+          const lines = content.split('\n').slice(0, 15);
+          console.log("Index file contents (first 15 lines):");
+          lines.forEach((line: string, i: number) => {
+            console.log(`${i + 1}: ${line}`);
+          });
+        } catch (error) {
+          console.log("Error reading index file:", error);
+        }
+      } else {
+        console.log("Index file does not exist at:", indexPath);
+      }
+      
       res.sendFile(indexPath);
     }
   });
