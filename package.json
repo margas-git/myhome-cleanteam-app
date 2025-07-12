@@ -9,7 +9,7 @@
     "server:dev": "tsx watch server/index.ts",
     "client:dev": "vite client",
     "build": "npm run build:client && npm run build:server",
-    "build:client": "vite build client",
+    "build:client": "cd client && vite build",
     "build:server": "tsc --project tsconfig.build.json",
     "start": "node dist/server/index.js",
     "db:push": "drizzle-kit push:pg --driver=pg --schema=./server/db/schema.ts --connectionString=$DATABASE_URL",
