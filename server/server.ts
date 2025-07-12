@@ -102,8 +102,8 @@ export function createServer() {
     // Serve static files from the built client
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
-    const staticPath = resolve(__dirname, "../client/dist");
-    const indexPath = resolve(__dirname, "../client/dist/index.html");
+    const staticPath = resolve(__dirname, "../../client/dist");
+    const indexPath = resolve(__dirname, "../../client/dist/index.html");
     
     console.log("Static files path:", staticPath);
     console.log("Index file path:", indexPath);
