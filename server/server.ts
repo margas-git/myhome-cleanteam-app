@@ -15,27 +15,52 @@ export function createServer() {
 
   // Configure helmet with CSP that allows Google Maps
   // Temporarily disable helmet for local development to fix Safari issues
-  if (process.env.NODE_ENV === 'production') {
-    app.use(helmet({
-      contentSecurityPolicy: {
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://maps.googleapis.com", "https://maps.gstatic.com"],
-          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://maps.googleapis.com"],
-          fontSrc: ["'self'", "https://fonts.gstatic.com"],
-          imgSrc: ["'self'", "data:", "https://maps.googleapis.com", "https://maps.gstatic.com", "https://streetviewpixels-pa.googleapis.com", "https://*.googleapis.com"],
-          connectSrc: ["'self'", "https://maps.googleapis.com", "https://*.googleapis.com"],
-          frameSrc: ["'self'", "https://maps.googleapis.com"],
-          objectSrc: ["'none'"],
-          mediaSrc: ["'self'"],
-          manifestSrc: ["'self'"],
+  if (process.env.NODE_ENV === "production") {
+    app.use(
+      helmet({
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+              "'self'",
+              "'unsafe-inline'",
+              "'unsafe-eval'",
+              "https://maps.googleapis.com",
+              "https://maps.gstatic.com",
+            ],
+            styleSrc: [
+              "'self'",
+              "'unsafe-inline'",
+              "https://fonts.googleapis.com",
+              "https://maps.googleapis.com",
+            ],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            imgSrc: [
+              "'self'",
+              "data:",
+              "https://maps.googleapis.com",
+              "https://maps.gstatic.com",
+              "https://streetviewpixels-pa.googleapis.com",
+              "https://*.googleapis.com",
+            ],
+            connectSrc: [
+              "'self'",
+              "https://maps.googleapis.com",
+              "https://*.googleapis.com",
+            ],
+            frameSrc: ["'self'", "https://maps.googleapis.com"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            manifestSrc: ["'self'"],
+          },
         },
-      },
-    }));
+      })
+    );
   }
   // CORS configuration
-  const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam.up.railway.app";
-  
+  const corsOrigin =
+    process.env.CORS_ORIGIN || "https://myhome-cleanteam-aden.up.railway.app";
+
   // Allow localhost for development
   const allowedOrigins = [
     corsOrigin,
@@ -44,51 +69,57 @@ export function createServer() {
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:4000",
-    "http://127.0.0.1:3000"
+    "http://127.0.0.1:3000",
   ];
-  
-  app.use(cors({ 
-    origin: true, // Allow all origins in development
-    credentials: true 
-  }));
+
+  app.use(
+    cors({
+      origin: true, // Allow all origins in development
+      credentials: true,
+    })
+  );
   app.use(express.json());
   app.use(cookieParser());
 
   // Health check
-  app.get("/api/health", (_req: Request, res: Response) => res.json({ success: true, data: "ok" }));
+  app.get("/api/health", (_req: Request, res: Response) =>
+    res.json({ success: true, data: "ok" })
+  );
 
   // Public routes
   app.get("/api/google-maps-api-key", (req: Request, res: Response) => {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
-    console.log('🔑 Server API Key Debug:', {
+    const apiKey =
+      process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    console.log("🔑 Server API Key Debug:", {
       hasGoogleMapsKey: !!process.env.GOOGLE_MAPS_API_KEY,
       hasViteKey: !!process.env.VITE_GOOGLE_MAPS_API_KEY,
       keyLength: apiKey?.length || 0,
-      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined'
+      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : "undefined",
     });
     res.json({ apiKey });
   });
 
   // New endpoint for Google Maps initialization
   app.get("/api/google-maps-init", (req: Request, res: Response) => {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
-    console.log('🗺️ Google Maps Init Debug:', {
+    const apiKey =
+      process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+    console.log("🗺️ Google Maps Init Debug:", {
       hasApiKey: !!apiKey,
       keyLength: apiKey?.length || 0,
-      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : 'undefined'
+      keyPreview: apiKey ? `${apiKey.substring(0, 10)}...` : "undefined",
     });
-    
+
     if (!apiKey) {
-      return res.status(500).json({ 
-        success: false, 
-        error: "Google Maps API key not configured" 
+      return res.status(500).json({
+        success: false,
+        error: "Google Maps API key not configured",
       });
     }
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       apiKey,
-      scriptUrl: `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&loading=async`
+      scriptUrl: `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry&loading=async`,
     });
   });
 
@@ -98,22 +129,22 @@ export function createServer() {
   app.use("/api/admin", authMiddleware, adminRouter);
 
   // Only serve static files in production
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === "production") {
     // Serve static files from the built client
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
-    
+
     // In production (Docker/Railway), files are at ../../client/dist from server location
     // In local production build, files are at ../client/dist
-    const isDocker = process.env.DOCKER_ENV || process.cwd().includes('/app');
-    const staticPath = isDocker 
+    const isDocker = process.env.DOCKER_ENV || process.cwd().includes("/app");
+    const staticPath = isDocker
       ? resolve(__dirname, "../../client/dist")
       : resolve(__dirname, "../client/dist");
     const indexPath = resolve(staticPath, "index.html");
-    
+
     console.log("Static files path:", staticPath);
     console.log("Index file path:", indexPath);
-    
+
     app.use(express.static(staticPath));
 
     // Serve the React app for all non-API routes
@@ -127,9 +158,9 @@ export function createServer() {
     // In development, only serve API routes
     app.get("*", (req: Request, res: Response) => {
       if (!req.path.startsWith("/api")) {
-        res.status(404).json({ 
-          success: false, 
-          error: "Not found. In development, the frontend runs on port 5173" 
+        res.status(404).json({
+          success: false,
+          error: "Not found. In development, the frontend runs on port 5173",
         });
       }
     });
@@ -142,4 +173,4 @@ export function createServer() {
   });
 
   return app;
-} 
+}
