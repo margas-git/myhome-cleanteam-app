@@ -21,28 +21,31 @@ export function Login() {
       console.log("🚀 Attempting login...");
       console.log("📡 URL:", url);
       console.log("📦 Payload:", { email, password });
-      
+
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       });
 
       console.log("📊 Response status:", response.status);
-      console.log("📋 Response headers:", Object.fromEntries(response.headers.entries()));
-      
+      console.log(
+        "📋 Response headers:",
+        Object.fromEntries(response.headers.entries())
+      );
+
       const data = await response.json();
       console.log("📄 Response data:", data);
 
       if (data.success) {
         const user = data.data.user;
-        
+
         // Refresh authentication state
         await checkAuth();
-        
+
         // Redirect based on user role
-        if (user.role === 'admin' || user.role === 'manager') {
+        if (user.role === "admin" || user.role === "manager") {
           setLocation("/admin");
         } else {
           setLocation("/staff/dashboard");
@@ -63,7 +66,7 @@ export function Login() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            MyHome CleanTeam
+            Daniel is the gay
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Sign in to your account
@@ -77,7 +80,10 @@ export function Login() {
           )}
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700"
+              >
                 Email
               </label>
               <input
@@ -90,7 +96,10 @@ export function Login() {
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700"
+              >
                 Password
               </label>
               <input
@@ -112,10 +121,12 @@ export function Login() {
               {loading ? "Signing in..." : "Sign in"}
             </button>
           </div>
-          
+
           {/* Quick login helpers for testing */}
           <div className="mt-6 border-t pt-4">
-            <p className="text-xs text-gray-500 mb-2">Quick login (for testing):</p>
+            <p className="text-xs text-gray-500 mb-2">
+              Quick login (for testing):
+            </p>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
