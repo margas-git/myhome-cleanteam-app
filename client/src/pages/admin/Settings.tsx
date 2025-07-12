@@ -36,13 +36,24 @@ interface TimesheetSettings {
   payRatePerHour: number;
 }
 
+interface PayrollSettings {
+  payRatePerHour: number;
+  staffStartTime: string;
+  lunchBreakMinHours: number;
+  lunchBreakDurationMinutes: number;
+  lunchBreakStartTime: string;
+  lunchBreakFinishTime: string;
+}
+
 export default function Settings() {
-  // Lunch Break Settings
-  const [lunchBreakSettings, setLunchBreakSettings] = useState<LunchBreakSettings>({
-    minHours: 5,
-    durationMinutes: 30,
-    startTime: "09:00",
-    finishTime: "17:00"
+  // Payroll Settings
+  const [payrollSettings, setPayrollSettings] = useState<PayrollSettings>({
+    payRatePerHour: 32.31,
+    staffStartTime: "08:00",
+    lunchBreakMinHours: 5,
+    lunchBreakDurationMinutes: 30,
+    lunchBreakStartTime: "09:00",
+    lunchBreakFinishTime: "17:00"
   });
 
   // Geolocation Radius Settings
@@ -67,58 +78,77 @@ export default function Settings() {
   });
 
   // UI State
-  const [activeTab, setActiveTab] = useState<'lunch-break' | 'geolocation-radius' | 'price-tiers' | 'timesheet-settings'>('lunch-break');
+  const [activeTab, setActiveTab] = useState<'payroll' | 'geolocation-radius' | 'price-tiers'>('payroll');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAllSettings();
+    fetchPayrollSettings();
+    fetchGeolocationRadiusSettings();
+    fetchPriceTiers();
   }, []);
 
-  const fetchAllSettings = async () => {
+  const fetchPayrollSettings = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch lunch break settings
-      const lunchBreakRes = await fetch(buildApiUrl("/api/admin/settings/lunch-break"), { credentials: "include" });
-      const lunchBreakData = await lunchBreakRes.json();
-      if (lunchBreakData.success) {
-        setLunchBreakSettings(lunchBreakData.data);
-      }
-
-      // Fetch price tiers
-      const tiersRes = await fetch(buildApiUrl("/api/admin/settings/price-tiers"), { credentials: "include" });
-      const tiersData = await tiersRes.json();
-      if (tiersData.success) {
-        setPriceTiers(tiersData.data);
-      }
-
-      // Fetch geolocation radius settings
-      const geolocationRes = await fetch(buildApiUrl("/api/admin/settings/geolocation-radius"), { credentials: "include" });
-      const geolocationData = await geolocationRes.json();
-      if (geolocationData.success) {
-        setGeolocationRadiusSettings(geolocationData.data);
+      const res = await fetch(buildApiUrl("/api/admin/settings/payroll"), { credentials: "include" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPayrollSettings(data.data);
       }
     } catch (e) {
-      setError("Failed to load settings");
+      setError("Failed to load payroll settings");
     } finally {
       setLoading(false);
     }
   };
 
-  const saveLunchBreakSettings = async (e: React.FormEvent) => {
+  const fetchGeolocationRadiusSettings = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(buildApiUrl("/api/admin/settings/geolocation-radius"), { credentials: "include" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setGeolocationRadiusSettings(data.data);
+      }
+    } catch (e) {
+      setError("Failed to load geolocation radius settings");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPriceTiers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(buildApiUrl("/api/admin/settings/price-tiers"), { credentials: "include" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPriceTiers(data.data);
+      }
+    } catch (e) {
+      setError("Failed to load price tiers");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const savePayrollSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setSuccess(false);
     try {
-      const res = await fetch(buildApiUrl("/api/admin/settings/lunch-break"), {
+      const res = await fetch(buildApiUrl("/api/admin/settings/payroll"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(lunchBreakSettings)
+        body: JSON.stringify(payrollSettings)
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -126,10 +156,10 @@ export default function Settings() {
         setTimeout(() => setSuccess(false), 3000);
         window.dispatchEvent(new CustomEvent('settingsUpdated'));
       } else {
-        setError(data.error || "Failed to save lunch break settings");
+        setError(data.error || "Failed to save payroll settings");
       }
     } catch (e) {
-      setError("Failed to save lunch break settings");
+      setError("Failed to save payroll settings");
     } finally {
       setSaving(false);
     }
@@ -270,17 +300,37 @@ export default function Settings() {
     setEditingTier(null);
   };
 
-  const saveTimesheetSettings = (e: React.FormEvent) => {
+  const saveTimesheetSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 2000);
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      const res = await fetch(buildApiUrl("/api/admin/settings/staff-pay-rate"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ payRatePerHour: timesheetSettings.payRatePerHour })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 2000);
+        window.dispatchEvent(new CustomEvent('settingsUpdated'));
+      } else {
+        setError(data.error || "Failed to save pay rate");
+      }
+    } catch (e) {
+      setError("Failed to save pay rate");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const tabs = [
-    { id: 'lunch-break', name: 'Lunch Break Settings', icon: '🍽️' },
+    { id: 'payroll', name: 'Payroll Settings', icon: '💸' },
     { id: 'geolocation-radius', name: 'Geolocation Radius', icon: '📍' },
-    { id: 'price-tiers', name: 'Customer Price Tiers', icon: '📊' },
-    { id: 'timesheet-settings', name: 'Timesheet Settings', icon: '🕒' }
+    { id: 'price-tiers', name: 'Customer Price Tiers', icon: '📊' }
   ] as const;
 
   return (
@@ -330,73 +380,119 @@ export default function Settings() {
               </div>
             )}
 
-            {/* Lunch Break Settings Tab */}
-            {activeTab === 'lunch-break' && (
+            {/* Payroll Settings Tab */}
+            {activeTab === 'payroll' && (
               <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Lunch Break Settings</h2>
-                <p className="text-sm text-gray-600 mb-6">Configure lunch break deduction rules for staff timesheets.</p>
-                
-                <form onSubmit={saveLunchBreakSettings} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Minimum hours worked for lunch break</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      value={lunchBreakSettings.minHours}
-                      onChange={e => setLunchBreakSettings({...lunchBreakSettings, minHours: Number(e.target.value)})}
-                      className="mt-1 block w-32 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                    <span className="text-xs text-gray-500 ml-2">Staff must work at least this many hours to receive a lunch break deduction.</span>
-                  </div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Payroll Settings</h2>
+                <p className="text-sm text-gray-600 mb-6">Configure pay rate, staff start time, and lunch break rules for payroll and timesheet calculations.</p>
+                <form onSubmit={savePayrollSettings} className="space-y-8">
                   
+                  {/* Pay Rate and Start Time Section */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Lunch break duration (minutes)</label>
-                    <input
-                      type="number"
-                      min={10}
-                      max={120}
-                      step={5}
-                      value={lunchBreakSettings.durationMinutes}
-                      onChange={e => setLunchBreakSettings({...lunchBreakSettings, durationMinutes: Number(e.target.value)})}
-                      className="mt-1 block w-32 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                    <span className="text-xs text-gray-500 ml-2">How many minutes to deduct for lunch break.</span>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Staff Pay & Schedule</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Staff Pay Rate (per hour)</label>
+                        <div className="mt-1 relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span className="text-gray-500 sm:text-sm">$</span>
+                          </div>
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={payrollSettings.payRatePerHour}
+                            onChange={e => setPayrollSettings({ ...payrollSettings, payRatePerHour: Number(e.target.value) })}
+                            className="block w-full border border-gray-300 rounded-md pl-7 pr-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                            required
+                          />
+                        </div>
+                        <span className="text-xs text-gray-500 mt-1 block">This rate is used for calculating labor costs and efficiency metrics.</span>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Staff Start Time</label>
+                        <input
+                          type="time"
+                          value={payrollSettings.staffStartTime}
+                          onChange={e => setPayrollSettings({ ...payrollSettings, staffStartTime: e.target.value })}
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block">This time will be used as the default staff start time for timesheets.</span>
+                      </div>
+                    </div>
                   </div>
-                  
+
+                  {/* Lunch Break Rules Section */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Start time for lunch break eligibility</label>
-                    <input
-                      type="time"
-                      value={lunchBreakSettings.startTime}
-                      onChange={e => setLunchBreakSettings({...lunchBreakSettings, startTime: e.target.value})}
-                      className="mt-1 block w-32 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                    <span className="text-xs text-gray-500 ml-2">Staff must start work before this time to be eligible for lunch break.</span>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Lunch Break Rules</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Minimum hours worked for lunch break</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          value={payrollSettings.lunchBreakMinHours}
+                          onChange={e => setPayrollSettings({ ...payrollSettings, lunchBreakMinHours: Number(e.target.value) })}
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block">Staff must work at least this many hours to receive a lunch break deduction.</span>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Lunch break duration (minutes)</label>
+                        <input
+                          type="number"
+                          min={10}
+                          max={120}
+                          step={5}
+                          value={payrollSettings.lunchBreakDurationMinutes}
+                          onChange={e => setPayrollSettings({ ...payrollSettings, lunchBreakDurationMinutes: Number(e.target.value) })}
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block">How many minutes to deduct for lunch break.</span>
+                      </div>
+                    </div>
                   </div>
-                  
+
+                  {/* Lunch Break Eligibility Times Section */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Finish time for lunch break eligibility</label>
-                    <input
-                      type="time"
-                      value={lunchBreakSettings.finishTime}
-                      onChange={e => setLunchBreakSettings({...lunchBreakSettings, finishTime: e.target.value})}
-                      className="mt-1 block w-32 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                    <span className="text-xs text-gray-500 ml-2">Staff must finish work after this time to be eligible for lunch break.</span>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Lunch Break Eligibility Times</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Start time for lunch break eligibility</label>
+                        <input
+                          type="time"
+                          value={payrollSettings.lunchBreakStartTime}
+                          onChange={e => setPayrollSettings({ ...payrollSettings, lunchBreakStartTime: e.target.value })}
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block">Staff must start work before this time to be eligible for lunch break.</span>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Finish time for lunch break eligibility</label>
+                        <input
+                          type="time"
+                          value={payrollSettings.lunchBreakFinishTime}
+                          onChange={e => setPayrollSettings({ ...payrollSettings, lunchBreakFinishTime: e.target.value })}
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                          required
+                        />
+                        <span className="text-xs text-gray-500 mt-1 block">Staff must finish work after this time to be eligible for lunch break.</span>
+                      </div>
+                    </div>
                   </div>
-                  
+
                   <div className="flex items-center space-x-4">
                     <button
                       type="submit"
                       disabled={saving}
                       className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                     >
-                      {saving ? "Saving..." : "Save Lunch Break Settings"}
+                      {saving ? "Saving..." : "Save Payroll Settings"}
                     </button>
                   </div>
                 </form>
@@ -644,53 +740,6 @@ export default function Settings() {
                     </div>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* Timesheet Settings Tab */}
-            {activeTab === 'timesheet-settings' && (
-              <div className="bg-white rounded-lg shadow p-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Timesheet Settings</h2>
-                <p className="text-sm text-gray-600 mb-6">Configure staff start time and pay rate for timesheets. These values will be used for future timesheet features.</p>
-                <form onSubmit={saveTimesheetSettings} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Staff Start Time</label>
-                    <input
-                      type="time"
-                      value={timesheetSettings.staffStartTime}
-                      onChange={e => setTimesheetSettings({ ...timesheetSettings, staffStartTime: e.target.value })}
-                      className="mt-1 block w-32 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      required
-                    />
-                    <span className="text-xs text-gray-500 ml-2">This time will be used as the default staff start time for timesheets.</span>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Staff Pay Rate (per hour)</label>
-                    <div className="mt-1 relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500 sm:text-sm">$</span>
-                      </div>
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={timesheetSettings.payRatePerHour}
-                        onChange={e => setTimesheetSettings({ ...timesheetSettings, payRatePerHour: Number(e.target.value) })}
-                        className="block w-32 border border-gray-300 rounded-md pl-7 pr-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                        required
-                      />
-                    </div>
-                    <span className="text-xs text-gray-500 ml-2">This rate is used for calculating labor costs and efficiency metrics.</span>
-                  </div>
-                  <div className="flex items-center space-x-4">
-                    <button
-                      type="submit"
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      Save Timesheet Settings
-                    </button>
-                  </div>
-                </form>
               </div>
             )}
           </>

@@ -11,7 +11,8 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=4000
-      - DATABASE_URL=postgresql://postgres:password@db:5432/myhome_cleanteam
+      # - DATABASE_URL=postgresql://postgres:password@db:5432/myhome_cleanteam
+      - DATABASE_URL=postgresql://neondb_owner:npg_nF6HSGfDXs3O@ep-restless-bar-a70zduuf-pooler.ap-southeast-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - CORS_ORIGIN=http://localhost:5173
@@ -19,9 +20,9 @@ services:
       - .:/app
       - /app/node_modules
       - /app/client/node_modules
-    depends_on:
-      db:
-        condition: service_healthy
+    # depends_on:
+    #   db:
+    #     condition: service_healthy
     restart: unless-stopped
     command: npm run dev
 

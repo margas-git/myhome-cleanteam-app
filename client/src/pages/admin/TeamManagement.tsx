@@ -16,6 +16,11 @@ interface Team {
     customerName: string;
     customerAddress: string;
   };
+  averageEfficiency?: number;
+  averageWageRatio?: number;
+  totalRevenue?: number;
+  totalWages?: number;
+  completedJobsCount?: number;
 }
 
 interface Staff {
@@ -384,10 +389,45 @@ export function TeamManagement() {
                   <div className="text-gray-400 italic ml-6 mb-5">No members assigned</div>
                 )}
                 
-                {/* Efficiency Row - TODO: Implement efficiency metrics */}
-                <div className="mt-3 p-2 bg-gray-50 border border-gray-200 rounded">
-                  <div className="text-gray-800 font-medium">Efficiency:</div>
-                  <div className="text-gray-600 text-sm">Coming soon...</div>
+                {/* Team Performance Metrics */}
+                <div className="mt-3 space-y-2">
+                  {/* Efficiency */}
+                  <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                    <div className="text-gray-800 font-medium text-sm">Average Efficiency:</div>
+                    <div className={`text-sm font-semibold ${
+                      team.averageEfficiency && team.averageEfficiency >= 100 ? 'text-green-600' : 
+                      team.averageEfficiency && team.averageEfficiency >= 80 ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {team.averageEfficiency ? `${team.averageEfficiency}%` : 'N/A'}
+                    </div>
+                  </div>
+
+                  {/* Wage Ratio */}
+                  <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                    <div className="text-gray-800 font-medium text-sm">Average Wage Ratio:</div>
+                    <div className={`text-sm font-semibold ${
+                      team.averageWageRatio && team.averageWageRatio <= 30 ? 'text-green-600' : 
+                      team.averageWageRatio && team.averageWageRatio <= 40 ? 'text-yellow-600' : 'text-red-600'
+                    }`}>
+                      {team.averageWageRatio ? `${team.averageWageRatio}%` : 'N/A'}
+                    </div>
+                  </div>
+
+                  {/* Revenue and Jobs */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                      <div className="text-gray-800 font-medium text-xs">Total Revenue:</div>
+                      <div className="text-sm font-semibold text-green-600">
+                        ${team.totalRevenue ? team.totalRevenue.toLocaleString() : '0'}
+                      </div>
+                    </div>
+                    <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                      <div className="text-gray-800 font-medium text-xs">Completed Jobs:</div>
+                      <div className="text-sm font-semibold text-blue-600">
+                        {team.completedJobsCount || 0}
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 
                 {team.activeJob && (

@@ -97,24 +97,37 @@ export function createServer() {
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
 
-  // Serve static files from the built client (always, for debugging)
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  const staticPath = resolve(__dirname, "../client/dist");
-  const indexPath = resolve(__dirname, "../client/dist/index.html");
-  
-  console.log("Static files path:", staticPath);
-  console.log("Index file path:", indexPath);
-  
-  app.use(express.static(staticPath));
+  // Only serve static files in production
+  if (process.env.NODE_ENV === 'production') {
+    // Serve static files from the built client
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const staticPath = resolve(__dirname, "../client/dist");
+    const indexPath = resolve(__dirname, "../client/dist/index.html");
+    
+    console.log("Static files path:", staticPath);
+    console.log("Index file path:", indexPath);
+    
+    app.use(express.static(staticPath));
 
-  // Serve the React app for all non-API routes
-  app.get("*", (req: Request, res: Response) => {
-    if (!req.path.startsWith("/api")) {
-      console.log("Serving React app for path:", req.path);
-      res.sendFile(indexPath);
-    }
-  });
+    // Serve the React app for all non-API routes
+    app.get("*", (req: Request, res: Response) => {
+      if (!req.path.startsWith("/api")) {
+        console.log("Serving React app for path:", req.path);
+        res.sendFile(indexPath);
+      }
+    });
+  } else {
+    // In development, only serve API routes
+    app.get("*", (req: Request, res: Response) => {
+      if (!req.path.startsWith("/api")) {
+        res.status(404).json({ 
+          success: false, 
+          error: "Not found. In development, the frontend runs on port 5173" 
+        });
+      }
+    });
+  }
 
   // Error handler
   app.use((err: any, _req: Request, res: Response) => {

@@ -1,0 +1,6 @@
+{
+  "schema": "./server/db/schema.ts",
+  "out": "./drizzle",
+  "driver": "pg",
+  "dbCredentialsEnv": "DATABASE_URL"
+} 

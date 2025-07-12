@@ -8,6 +8,13 @@
       "when": 1751937930866,
       "tag": "0000_magical_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1752240943948,
+      "tag": "0001_late_maestro",
+      "breakpoints": true
     }
   ]
 }

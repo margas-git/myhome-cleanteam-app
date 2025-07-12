@@ -211,9 +211,9 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          teamId: selectedTeam,
-          customerId: selectedCustomer,
-          memberIds: selectedMembers
+          teamId: typeof selectedTeam === 'object' && selectedTeam !== null ? (selectedTeam as any).id : selectedTeam,
+          customerId: selectedCustomer && typeof selectedCustomer === 'object' ? (selectedCustomer as any).id : selectedCustomer,
+          memberIds: selectedMembers.map(m => typeof m === 'object' && m !== null ? (m as any).id : m)
         })
       });
 
