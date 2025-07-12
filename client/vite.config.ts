@@ -5,6 +5,10 @@ export default defineConfig({
   plugins: [
     react()
   ],
+  build: {
+    outDir: "dist",
+    emptyOutDir: true
+  },
   server: {
     port: 5173,
     strictPort: true, // Fail if port is in use instead of trying another port
