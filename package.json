@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "npm run server:dev",
     "server:dev": "tsx watch server/index.ts",
-    "client:dev": "vite client",
+    "client:dev": "cd client && vite",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build client",
     "build:server": "tsc --project tsconfig.build.json",
