@@ -475,6 +475,8 @@ export function Reports() {
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Wednesday</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Thursday</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Friday</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Saturday</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sunday</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                       </tr>
                     </thead>
@@ -693,6 +695,84 @@ export function Reports() {
                                   })()}
                                 </div>
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                <div className="flex items-center justify-center space-x-1">
+                                  {(() => {
+                                    const dayData = getDayData(staff, 'saturday');
+                                    return (
+                                      <>
+                                        <span className={
+                                          dayData.hours > 0 && lunchBreakSettings ? (
+                                            dayData.hours >= lunchBreakSettings.minHours && dayData.jobs >= 2 ?
+                                              '' :
+                                              'text-red-600'
+                                          ) : ''
+                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        {dayData.hours > 0 && (
+                                          (() => {
+                                            if (!lunchBreakSettings) {
+                                              return null; // Don't show alerts until settings load
+                                            }
+                                            
+                                            // Check if any sub-row condition failed
+                                            const startFailed = dayData.lunchBreakDebug?.conditions?.[2]?.passed === false;
+                                            const endFailed = dayData.lunchBreakDebug?.conditions?.[3]?.passed === false;
+                                            const cleansFailed = dayData.lunchBreakDebug?.conditions?.[1]?.passed === false;
+                                            
+                                            // Show alert if any condition failed
+                                            if (startFailed || endFailed || cleansFailed) {
+                                              return (
+                                                <span title="One or more lunch break conditions failed - check expanded details" className="text-red-500">⚠️</span>
+                                              );
+                                            }
+                                            
+                                            return null;
+                                          })()
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                <div className="flex items-center justify-center space-x-1">
+                                  {(() => {
+                                    const dayData = getDayData(staff, 'sunday');
+                                    return (
+                                      <>
+                                        <span className={
+                                          dayData.hours > 0 && lunchBreakSettings ? (
+                                            dayData.hours >= lunchBreakSettings.minHours && dayData.jobs >= 2 ?
+                                              '' :
+                                              'text-red-600'
+                                          ) : ''
+                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        {dayData.hours > 0 && (
+                                          (() => {
+                                            if (!lunchBreakSettings) {
+                                              return null; // Don't show alerts until settings load
+                                            }
+                                            
+                                            // Check if any sub-row condition failed
+                                            const startFailed = dayData.lunchBreakDebug?.conditions?.[2]?.passed === false;
+                                            const endFailed = dayData.lunchBreakDebug?.conditions?.[3]?.passed === false;
+                                            const cleansFailed = dayData.lunchBreakDebug?.conditions?.[1]?.passed === false;
+                                            
+                                            // Show alert if any condition failed
+                                            if (startFailed || endFailed || cleansFailed) {
+                                              return (
+                                                <span title="One or more lunch break conditions failed - check expanded details" className="text-red-500">⚠️</span>
+                                              );
+                                            }
+                                            
+                                            return null;
+                                          })()
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-center">
                                 {getAdjustedTotalHours(staff)}h
                               </td>
@@ -707,7 +787,7 @@ export function Reports() {
                                       <span>Lunch Break</span>
                                     </div>
                                   </td>
-                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map((day) => {
+                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
                                     const dayData = getDayData(staff, day);
                                     const updateKey = `${staff.staffName}-${day}`;
                                     const isUpdating = updatingLunchBreak.has(updateKey);
@@ -761,7 +841,7 @@ export function Reports() {
                                       <span>Start</span>
                                     </div>
                                   </td>
-                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map((day) => {
+                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
                                     const dayData = getDayData(staff, day);
                                     const failed = dayData.lunchBreakDebug?.conditions?.[2]?.passed === false;
                                     const required = dayData.lunchBreakDebug?.rules?.startTime;
@@ -791,7 +871,7 @@ export function Reports() {
                                       <span>End</span>
                                     </div>
                                   </td>
-                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map((day) => {
+                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
                                     const dayData = getDayData(staff, day);
                                     const failed = dayData.lunchBreakDebug?.conditions?.[3]?.passed === false;
                                     const required = dayData.lunchBreakDebug?.rules?.finishTime;
@@ -821,7 +901,7 @@ export function Reports() {
                                       <span>Cleans</span>
                                     </div>
                                   </td>
-                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].map((day) => {
+                                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => {
                                     const dayData = getDayData(staff, day);
                                     const failed = dayData.lunchBreakDebug?.conditions?.[1]?.passed === false;
                                     const required = dayData.lunchBreakDebug?.rules?.minJobs;

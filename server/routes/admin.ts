@@ -1773,10 +1773,6 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
           }
         }
       }
-      // Skip weekends (Saturday = 6, Sunday = 0)
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        return;
-      }
       // Map day of week to our structure (0 = Sunday, 1 = Monday, etc.)
       const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       const dayKeyName = dayMap[dayOfWeek] as keyof typeof timesheet;
