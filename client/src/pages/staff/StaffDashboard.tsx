@@ -577,9 +577,10 @@ export function StaffDashboard() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
+                <svg className="w-8 h-8" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="75" cy="75" r="75" fill="#592c81"/>
+                  <path d="M51.88,124.89l11.26-52.91s-14.98-6.86-14.98-24.18,14.92-27.05,27-27.05,27.06,9.51,27.06,27.05-14.99,24.19-14.99,24.19l13.77,52.9h-49.12Z" fill="#fff" stroke="#999" strokeMiterlimit="10" strokeWidth="0.5"/>
                 </svg>
               </div>
               <div>
