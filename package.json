@@ -9,7 +9,7 @@
     "server:dev": "tsx watch server/index.ts",
     "client:dev": "vite client",
     "build": "npm run build:client && npm run build:server",
-    "build:client": "vite build client",
+    "build:client": "cd client && vite build",
     "build:server": "tsc --project tsconfig.build.json",
     "postbuild": "echo 'Build verification:' && ls -la client/dist/ && echo 'CSS files:' && ls -la client/dist/assets/*.css 2>/dev/null || echo 'No CSS files found'",
     "start": "node dist/server/index.js",

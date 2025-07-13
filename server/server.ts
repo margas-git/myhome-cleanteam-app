@@ -104,71 +104,43 @@ export function createServer() {
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
 
-  // Serve static files from the built client (always, for debugging)
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  
-  // In production, server runs from /app/dist/server but files are in /app/client/dist
-  // In development, files are in ../client/dist
-  const staticPath = process.env.NODE_ENV === 'production'
-    ? resolve(__dirname, "../../client/dist")  // Go up two levels from /app/dist/server to /app, then into client/dist
-    : resolve(__dirname, "../client/dist");
-  const indexPath = process.env.NODE_ENV === 'production'
-    ? resolve(__dirname, "../../client/dist/index.html")
-    : resolve(__dirname, "../client/dist/index.html");
-  
-  console.log("Static files path:", staticPath);
-  console.log("Index file path:", indexPath);
-  console.log("NODE_ENV:", process.env.NODE_ENV);
-  console.log("__dirname:", __dirname);
-  
-  // Debug: Check if files exist
-  console.log("Static path exists:", existsSync(staticPath));
-  console.log("Index file exists:", existsSync(indexPath));
-  
-  // List contents of the static directory if it exists
-  if (existsSync(staticPath)) {
-    try {
-      const files = readdirSync(staticPath);
-      console.log("Static directory contents:", files);
-    } catch (err) {
-      console.log("Error reading static directory:", err);
-    }
+  // Only serve static files in production
+  if (process.env.NODE_ENV === 'production') {
+    // Serve static files from the built client
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const staticPath = resolve(__dirname, "../../client/dist");
+    const indexPath = resolve(__dirname, "../../client/dist/index.html");
+    
+    console.log("Static files path:", staticPath);
+    console.log("Index file path:", indexPath);
+    console.log("NODE_ENV:", process.env.NODE_ENV);
+    console.log("__dirname:", __dirname);
+    
+    // Debug: Check if files exist
+    console.log("Static path exists:", existsSync(staticPath));
+    console.log("Index file exists:", existsSync(indexPath));
+    
+    app.use(express.static(staticPath));
+
+    // Serve the React app for all non-API routes
+    app.get("*", (req: Request, res: Response) => {
+      if (!req.path.startsWith("/api")) {
+        console.log("Serving React app for path:", req.path);
+        res.sendFile(indexPath);
+      }
+    });
   } else {
-    // Try to list the parent directory to see what's available
-    const parentDir = resolve(__dirname, "../");
-    console.log("Parent directory:", parentDir);
-    console.log("Parent directory exists:", existsSync(parentDir));
-    if (existsSync(parentDir)) {
-      try {
-        const parentFiles = readdirSync(parentDir);
-        console.log("Parent directory contents:", parentFiles);
-      } catch (err) {
-        console.log("Error reading parent directory:", err);
+    // In development, only serve API routes
+    app.get("*", (req: Request, res: Response) => {
+      if (!req.path.startsWith("/api")) {
+        res.status(404).json({ 
+          success: false, 
+          error: "Not found. In development, the frontend runs on port 5173" 
+        });
       }
-    }
+    });
   }
-
-  // Serve static files with proper MIME types
-  app.use(express.static(staticPath, {
-    setHeaders: (res, path) => {
-      if (path.endsWith('.css')) {
-        res.setHeader('Content-Type', 'text/css');
-        console.log('Serving CSS file:', path);
-      } else if (path.endsWith('.js')) {
-        res.setHeader('Content-Type', 'application/javascript');
-        console.log('Serving JS file:', path);
-      }
-    }
-  }));
-
-  // Serve the React app for all non-API routes
-  app.get("*", (req: Request, res: Response) => {
-    if (!req.path.startsWith("/api")) {
-      console.log("Serving React app for path:", req.path);
-      res.sendFile(indexPath);
-    }
-  });
 
   // Error handler
   app.use((err: any, _req: Request, res: Response) => {

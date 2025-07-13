@@ -233,7 +233,8 @@ router.post("/time-entries/clock-in", async (req, res) => {
             teamId,
             status: "in_progress"
         })
-            .returning({ id: jobs.id });
+            .returning({ id: jobs.id, teamId: jobs.teamId });
+        console.log(`[Clock-In] Created job:`, newJob);
         // Create time entries for all selected members
         const timeEntriesToCreate = [];
         const currentTime = new Date();
@@ -523,6 +524,10 @@ router.post("/time-entries/clock-out", async (req, res) => {
         // If no active entries remain, the job is fully completed
         if (remainingActiveEntries[0].count === 0) {
             console.log(`Job ${jobId} is fully completed, calculating customer metrics...`);
+            // Update the job status to 'completed'
+            await db.update(jobs)
+                .set({ status: 'completed' })
+                .where(eq(jobs.id, jobId));
             // Get the customer ID for this job
             const jobInfo = await db
                 .select({ customerId: jobs.customerId })

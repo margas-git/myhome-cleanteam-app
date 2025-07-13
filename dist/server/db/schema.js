@@ -41,6 +41,8 @@ export const customers = pgTable("customers", {
     notes: text("notes"),
     targetTimeMinutes: integer("target_time_minutes"), // Target time in minutes for this customer
     averageWageRatio: integer("average_wage_ratio"), // Average wage ratio percentage for this customer
+    isFriendsFamily: boolean("is_friends_family").default(false), // Whether this is a friends & family customer
+    friendsFamilyMinutes: integer("friends_family_minutes"), // Allocated minutes for friends & family customers
     active: boolean("active").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });

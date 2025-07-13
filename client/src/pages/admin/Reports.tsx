@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { AdminLayout } from "../../components/AdminLayout";
 import { buildApiUrl } from "../../config/api";
+import { toZonedTime, format as formatTz } from 'date-fns-tz';
 
 interface LunchBreakDebug {
   hasOverride: boolean;
@@ -70,6 +71,40 @@ function formatTo12Hour(timeStr: string | undefined) {
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Helper to format a UTC date string to the user's local timezone
+function formatToUserTimezone(utcDateString: string | null | undefined, fmt: string = 'h:mm a') {
+  if (!utcDateString) return '-';
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Australia/Melbourne';
+    const zoned = toZonedTime(utcDateString, tz);
+    // Use single 'h' for hour (no leading zero), and 'a' for lowercase am/pm
+    let formatted = formatTz(zoned, fmt, { timeZone: tz });
+    // Convert AM/PM to lowercase
+    formatted = formatted.replace('AM', 'am').replace('PM', 'pm');
+    return formatted;
+  } catch {
+    return utcDateString;
+  }
+}
+
+// Helper to add 10 hours to a UTC date string and format as local time
+function formatToMelbourneTime(utcDateString: string | null | undefined, fmt: string = 'hh:mm aaaa') {
+  if (!utcDateString) return '-';
+  try {
+    const date = new Date(utcDateString);
+    date.setHours(date.getHours() + 10); // Add 10 hours for AEST
+    return date.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true });
+  } catch {
+    return utcDateString;
+  }
+}
+
+function isValidDateString(dateStr: string | null | undefined) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  return !isNaN(d.getTime());
 }
 
 export function Reports() {
@@ -346,7 +381,7 @@ export function Reports() {
                 Comprehensive insights into your cleaning operations.
               </p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center spacepx-6 py-3 text-sm text-center text-red-600-x-4">
               {activeTab === 'timesheets' && (
                 <>
                   <label htmlFor="weekFilter" className="text-sm font-medium text-gray-700">
@@ -420,7 +455,7 @@ export function Reports() {
                     <p className="text-3xl font-bold text-green-600">
                       {reportData?.timesheets.stats.totalJobs || 0}
                     </p>
-                    <p className="text-sm text-gray-500">Total Jobs</p>
+                    <p className="text-sm text-gray-500">Total Completed Cleans</p>
                   </div>
                 </div>
               </div>
@@ -730,9 +765,12 @@ export function Reports() {
                                     const dayData = getDayData(staff, day);
                                     const failed = dayData.lunchBreakDebug?.conditions?.[2]?.passed === false;
                                     const required = dayData.lunchBreakDebug?.rules?.startTime;
+                                    if (process.env.NODE_ENV !== 'production') {
+                                      console.log('StartTime:', dayData.startTime);
+                                    }
                                     return (
                                       <td key={`${day}-start`} className={`px-6 py-3 text-sm text-center ${failed ? 'text-red-600' : 'text-gray-600'}`}> 
-                                        {dayData.startTime}
+                                        {isValidDateString(dayData.startTime) ? formatToUserTimezone(dayData.startTime, 'h:mm a') : '-'}
                                         {failed && required ? (
                                           <>
                                             <br />
@@ -757,9 +795,12 @@ export function Reports() {
                                     const dayData = getDayData(staff, day);
                                     const failed = dayData.lunchBreakDebug?.conditions?.[3]?.passed === false;
                                     const required = dayData.lunchBreakDebug?.rules?.finishTime;
+                                    if (process.env.NODE_ENV !== 'production') {
+                                      console.log('EndTime:', dayData.endTime);
+                                    }
                                     return (
                                       <td key={`${day}-end`} className={`px-6 py-3 text-sm text-center ${failed ? 'text-red-600' : 'text-gray-600'}`}> 
-                                        {dayData.endTime}
+                                        {isValidDateString(dayData.endTime) ? formatToUserTimezone(dayData.endTime, 'h:mm a') : '-'}
                                         {failed && required ? (
                                           <>
                                             <br />

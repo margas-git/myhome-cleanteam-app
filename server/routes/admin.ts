@@ -48,16 +48,24 @@ router.get("/customers", async (req: Request, res: Response) => {
                   )
                 `
               })
-              .from(timeEntries)
-              .innerJoin(jobs, eq(timeEntries.jobId, jobs.id))
+              .from(jobs)
               .innerJoin(customers, eq(jobs.customerId, customers.id))
+              .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
               .where(
                 and(
                   eq(jobs.customerId, customer.id),
                   sql`${timeEntries.clockOutTime} IS NOT NULL`
                 )
               )
-              .groupBy(jobs.id, customers.price);
+              .groupBy(jobs.id, customers.price)
+              .having(sql`COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`);
+
+            if (customer.name === 'Aden J Margheriti') {
+              console.log(`DEBUG: Found ${completedJobs.length} completed jobs for Aden`);
+              if (completedJobs.length > 0) {
+                console.log(`DEBUG: Aden completed jobs:`, completedJobs);
+              }
+            }
 
             let averageEfficiency = 0;
             let totalWageRatio = 0;
@@ -65,27 +73,37 @@ router.get("/customers", async (req: Request, res: Response) => {
 
             for (const job of completedJobs) {
               if (job.actualJobDuration > 0) {
-                // Get the expected time from price tiers based on customer price
-                const priceTier = await db
-                  .select({
-                    allottedMinutes: timeAllocationTiers.allottedMinutes
-                  })
-                  .from(timeAllocationTiers)
-                  .where(
-                    and(
-                      sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
-                      sql`${timeAllocationTiers.priceMax} >= ${job.price}`
+                let expectedTime = 1.5; // Default 1.5 hours (90 minutes)
+                if (customer.isFriendsFamily && customer.friendsFamilyMinutes) {
+                  expectedTime = customer.friendsFamilyMinutes / 60; // Use friends & family minutes
+                  if (customer.name === 'Aden J Margheriti') {
+                    console.log(`DEBUG: Aden job - expectedTime: ${expectedTime}h, actualJobDuration: ${job.actualJobDuration}h, friendsFamilyMinutes: ${customer.friendsFamilyMinutes}`);
+                  }
+                } else {
+                  // Get the expected time from price tiers based on customer price
+                  const priceTier = await db
+                    .select({
+                      allottedMinutes: timeAllocationTiers.allottedMinutes
+                    })
+                    .from(timeAllocationTiers)
+                    .where(
+                      and(
+                        sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
+                        sql`${timeAllocationTiers.priceMax} >= ${job.price}`
+                      )
                     )
-                  )
-                  .limit(1);
+                    .limit(1);
 
-                let expectedTime = 1.5; // Default 1.5 hours (90 minutes) if no tier found
-                if (priceTier.length > 0) {
-                  expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
+                  if (priceTier.length > 0) {
+                    expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
+                  }
                 }
 
                 // Calculate efficiency for this job
                 const jobEfficiency = (expectedTime / job.actualJobDuration) * 100;
+                if (customer.name === 'Aden J Margheriti') {
+                  console.log(`DEBUG: Aden job efficiency: ${jobEfficiency}%`);
+                }
                 averageEfficiency += Math.max(Math.round(jobEfficiency), 0);
 
                 // Calculate wage ratio for this job
@@ -117,7 +135,7 @@ router.get("/customers", async (req: Request, res: Response) => {
 // Create new customer
 router.post("/customers", async (req: Request, res: Response) => {
   try {
-    const { name, address, phone, email, notes, price, cleanFrequency, latitude, longitude } = req.body;
+    const { name, address, phone, email, notes, price, cleanFrequency, latitude, longitude, isFriendsFamily, friendsFamilyMinutes } = req.body;
 
     if (!name || !address) {
       return res.status(400).json({
@@ -145,6 +163,8 @@ router.post("/customers", async (req: Request, res: Response) => {
         notes: notes || null,
         price: customerPrice,
         cleanFrequency: cleanFrequency || "weekly",
+        isFriendsFamily: isFriendsFamily || false,
+        friendsFamilyMinutes: friendsFamilyMinutes ? parseInt(friendsFamilyMinutes) : null,
         active: true,
         createdAt: new Date()
       })
@@ -161,7 +181,7 @@ router.post("/customers", async (req: Request, res: Response) => {
 router.put("/customers/:id", async (req: Request, res: Response) => {
   try {
     const customerId = parseInt(req.params.id);
-    const { name, address, latitude, longitude, phone, email, notes, price, cleanFrequency, active } = req.body;
+    const { name, address, latitude, longitude, phone, email, notes, price, cleanFrequency, active, isFriendsFamily, friendsFamilyMinutes } = req.body;
 
     // Build update object dynamically to only update provided fields
     const updateData: any = {};
@@ -175,6 +195,8 @@ router.put("/customers/:id", async (req: Request, res: Response) => {
     if (price !== undefined) updateData.price = parseInt(price);
     if (cleanFrequency !== undefined) updateData.cleanFrequency = cleanFrequency;
     if (active !== undefined) updateData.active = active;
+    if (isFriendsFamily !== undefined) updateData.isFriendsFamily = isFriendsFamily;
+    if (friendsFamilyMinutes !== undefined) updateData.friendsFamilyMinutes = friendsFamilyMinutes ? parseInt(friendsFamilyMinutes) : null;
 
     const [updatedCustomer] = await db
       .update(customers)
@@ -423,18 +445,119 @@ router.get("/teams", async (req: Request, res: Response) => {
       .innerJoin(teamsUsers, eq(users.id, teamsUsers.userId))
       .orderBy(teamsUsers.teamId, users.firstName, users.lastName);
 
-    // Combine teams with active job data and members
-    const teamsWithData = allTeams.map(team => {
-      const activeJob = activeJobs.find(job => job.teamId === team.id);
-      const members = allTeamMembers.filter(member => member.teamId === team.id);
-      return {
-        ...team,
-        activeJob: activeJob || null,
-        members
-      };
-    });
+    // Fetch staff pay rate from settings
+    const payRateRow = await db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, "staff_pay_rate_per_hour"))
+      .limit(1);
+    
+    const staffPayRatePerHour = Number(payRateRow[0]?.value ?? 32.31);
 
-    res.json({ success: true, data: teamsWithData });
+    // Calculate historical efficiency and wages for each team
+    const teamsWithMetrics = await Promise.all(
+      allTeams.map(async (team) => {
+        // Get all completed jobs for this team
+        const completedJobs = await db
+          .select({
+            jobId: jobs.id,
+            price: customers.price,
+            isFriendsFamily: customers.isFriendsFamily,
+            friendsFamilyMinutes: customers.friendsFamilyMinutes,
+            actualJobDuration: sql<number>`
+              EXTRACT(EPOCH FROM (
+                MAX(${timeEntries.clockOutTime}) - MIN(${timeEntries.clockInTime})
+              )) / 3600
+            `,
+            totalWages: sql<number>`
+              COALESCE(
+                SUM(
+                  EXTRACT(EPOCH FROM (${timeEntries.clockOutTime} - ${timeEntries.clockInTime})) / 3600 * ${staffPayRatePerHour}
+                ),
+                0
+              )
+            `
+          })
+          .from(jobs)
+          .innerJoin(customers, eq(jobs.customerId, customers.id))
+          .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
+          .where(
+            and(
+              eq(jobs.teamId, team.id),
+              sql`${timeEntries.clockOutTime} IS NOT NULL`
+            )
+          )
+          .groupBy(jobs.id, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes)
+          .having(sql`COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`);
+
+        let totalEfficiency = 0;
+        let totalWageRatio = 0;
+        let totalRevenue = 0;
+        let totalWages = 0;
+        let validJobs = 0;
+
+        for (const job of completedJobs) {
+          if (job.actualJobDuration > 0) {
+            let expectedTime = 1.5; // Default 1.5 hours (90 minutes)
+            
+            if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+              expectedTime = job.friendsFamilyMinutes / 60; // Use friends & family minutes
+            } else {
+              // Get the expected time from price tiers based on customer price
+              const priceTier = await db
+                .select({
+                  allottedMinutes: timeAllocationTiers.allottedMinutes
+                })
+                .from(timeAllocationTiers)
+                .where(
+                  and(
+                    sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
+                    sql`${timeAllocationTiers.priceMax} >= ${job.price}`
+                  )
+                )
+                .limit(1);
+
+              if (priceTier.length > 0) {
+                expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
+              }
+            }
+
+            // Calculate efficiency for this job
+            const jobEfficiency = (expectedTime / job.actualJobDuration) * 100;
+            totalEfficiency += Math.max(Math.round(jobEfficiency), 0);
+
+            // Calculate wage ratio for this job (only for non-Friends & Family)
+            if (!job.isFriendsFamily) {
+              const jobWageRatio = job.price > 0 ? Math.round((job.totalWages / job.price) * 100) : 0;
+              totalWageRatio += jobWageRatio;
+              totalRevenue += job.price;
+              totalWages += job.totalWages;
+            }
+
+            validJobs++;
+          }
+        }
+
+        const averageEfficiency = validJobs > 0 ? totalEfficiency / validJobs : 0;
+        const averageWageRatio = validJobs > 0 ? totalWageRatio / validJobs : 0;
+
+        const activeJob = activeJobs.find(job => job.teamId === team.id);
+        const members = allTeamMembers.filter(member => member.teamId === team.id);
+
+        return {
+          ...team,
+          activeJob: activeJob || null,
+          members,
+          averageEfficiency: Math.round(averageEfficiency),
+          averageWageRatio: Math.round(averageWageRatio),
+          totalRevenue: Math.round(totalRevenue),
+          totalWages: Math.round(totalWages),
+          completedJobsCount: validJobs
+        };
+      })
+    );
+
+    res.json({ success: true, data: teamsWithMetrics });
   } catch (error) {
     console.error("Error fetching teams:", error);
     res.status(500).json({ success: false, error: "Failed to fetch teams" });
@@ -672,6 +795,8 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
         teamName: teams.name,
         teamColor: teams.colorHex,
         price: customers.price,
+        isFriendsFamily: customers.isFriendsFamily,
+        friendsFamilyMinutes: customers.friendsFamilyMinutes,
         clockInTime: sql<string>`MIN(${timeEntries.clockInTime})`,
         clockOutTime: sql<string>`MAX(${timeEntries.clockOutTime})`
       })
@@ -680,7 +805,7 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
       .leftJoin(teams, eq(jobs.teamId, teams.id))
       .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
       .where(sql`${timeEntries.clockOutTime} IS NOT NULL`)
-      .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price)
+      .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes)
       .having(sql`COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`)
       .orderBy(sql`MAX(${timeEntries.clockOutTime}) DESC`)
       .limit(50);
@@ -718,9 +843,11 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
         let efficiency = 100; // Default to 100%
         let allocatedMinutes = 90; // Default 90 minutes
         let timeDifferenceMinutes = 0; // Default 0 minutes difference
-        let wageRatio = 0; // Default wage ratio
+        let wageRatio = 0;
         
-        if (members.length > 0) {
+        if (job.isFriendsFamily) {
+          wageRatio = 0; // Always hide wage ratio for Friends & Family
+        } else if (members.length > 0) {
           // Calculate actual time as job duration (not sum of individual hours)
           const clockInTimes = members
             .map(m => m.clockInTime ? new Date(m.clockInTime).getTime() : null)
@@ -734,24 +861,31 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
             const actualJobDuration = (latestEnd - earliestStart) / (1000 * 60 * 60); // Convert to hours
 
             if (actualJobDuration > 0) {
-              // Get the expected time from price tiers based on customer price
-              const priceTier = await db
-                .select({
-                  allottedMinutes: timeAllocationTiers.allottedMinutes
-                })
-                .from(timeAllocationTiers)
-                .where(
-                  and(
-                    sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
-                    sql`${timeAllocationTiers.priceMax} >= ${job.price}`
-                  )
-                )
-                .limit(1);
-
               let expectedTime = 1.5; // Default 1.5 hours (90 minutes) if no tier found
-              if (priceTier.length > 0) {
-                expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
-                allocatedMinutes = priceTier[0].allottedMinutes;
+              
+              if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+                // Use friends & family allocated minutes
+                expectedTime = job.friendsFamilyMinutes / 60; // Convert minutes to hours
+                allocatedMinutes = job.friendsFamilyMinutes;
+              } else {
+                // Get the expected time from price tiers based on customer price
+                const priceTier = await db
+                  .select({
+                    allottedMinutes: timeAllocationTiers.allottedMinutes
+                  })
+                  .from(timeAllocationTiers)
+                  .where(
+                    and(
+                      sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
+                      sql`${timeAllocationTiers.priceMax} >= ${job.price}`
+                    )
+                  )
+                  .limit(1);
+
+                if (priceTier.length > 0) {
+                  expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
+                  allocatedMinutes = priceTier[0].allottedMinutes;
+                }
               }
 
               // Calculate time difference in minutes
@@ -761,18 +895,17 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
               efficiency = (expectedTime / actualJobDuration) * 100;
               efficiency = Math.max(Math.round(efficiency), 0); // Only clamp to 0, allow >100%
               
-              // Calculate wage ratio for this job
-              // Sum up all individual time entries for accurate wage calculation
-              const totalWages = members.reduce((sum, member) => {
-                if (member.clockInTime && member.clockOutTime) {
-                  const duration = (new Date(member.clockOutTime).getTime() - new Date(member.clockInTime).getTime()) / (1000 * 60 * 60);
-                  return sum + (duration * staffPayRatePerHour);
-                }
-                return sum;
-              }, 0);
-              wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
-              
-
+              // Calculate wage ratio for this job (only for non-Friends & Family)
+              if (!job.isFriendsFamily) {
+                const totalWages = members.reduce((sum, member) => {
+                  if (member.clockInTime && member.clockOutTime) {
+                    const duration = (new Date(member.clockOutTime).getTime() - new Date(member.clockInTime).getTime()) / (1000 * 60 * 60);
+                    return sum + (duration * staffPayRatePerHour);
+                  }
+                  return sum;
+                }, 0);
+                wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
+              }
             }
           }
         }
@@ -1001,17 +1134,18 @@ router.post("/cleans/end-active", async (req: Request, res: Response) => {
     // If no active entries remain, the job is fully completed
     if (remainingActiveEntries[0].count === 0) {
       console.log(`Job ${jobId} is fully completed (admin), calculating customer metrics...`);
-      
+      // Update the job status to 'completed'
+      await db.update(jobs)
+        .set({ status: 'completed' })
+        .where(eq(jobs.id, jobId));
       // Get the customer ID for this job
       const jobInfo = await db
         .select({ customerId: jobs.customerId })
         .from(jobs)
         .where(eq(jobs.id, jobId))
         .limit(1);
-
       if (jobInfo.length > 0 && jobInfo[0].customerId) {
         const customerId = jobInfo[0].customerId;
-        
         // Calculate metrics for this customer in the background (don't wait for it)
         calculateCustomerMetrics(customerId).catch(error => {
           console.error(`Background metrics calculation failed for customer ${customerId}:`, error);
@@ -1098,17 +1232,18 @@ router.put("/cleans/:jobId", async (req: Request, res: Response) => {
       // If no active entries remain, the job is fully completed
       if (remainingActiveEntries[0].count === 0) {
         console.log(`Job ${jobId} is fully completed (admin edit), calculating customer metrics...`);
-        
+        // Update the job status to 'completed'
+        await db.update(jobs)
+          .set({ status: 'completed' })
+          .where(eq(jobs.id, jobId));
         // Get the customer ID for this job
         const jobInfo = await db
           .select({ customerId: jobs.customerId })
           .from(jobs)
           .where(eq(jobs.id, jobId))
           .limit(1);
-
         if (jobInfo.length > 0 && jobInfo[0].customerId) {
           const customerId = jobInfo[0].customerId;
-          
           // Calculate metrics for this customer in the background (don't wait for it)
           calculateCustomerMetrics(customerId).catch(error => {
             console.error(`Background metrics calculation failed for customer ${customerId}:`, error);
@@ -1204,6 +1339,7 @@ router.get("/dashboard", async (req: Request, res: Response) => {
         customerId: customers.id,
         customerName: customers.name,
         customerPrice: customers.price,
+        isFriendsFamily: customers.isFriendsFamily,
         actualJobDuration: sql<number>`
           EXTRACT(EPOCH FROM (
             MAX(${timeEntries.clockOutTime}) - MIN(${timeEntries.clockInTime})
@@ -1217,10 +1353,11 @@ router.get("/dashboard", async (req: Request, res: Response) => {
         and(
           sql`${timeEntries.clockOutTime} >= ${startUTC.toISOString()}`,
           sql`${timeEntries.clockOutTime} < ${endUTC.toISOString()}`,
-          sql`${timeEntries.clockOutTime} IS NOT NULL`
+          sql`${timeEntries.clockOutTime} IS NOT NULL`,
+          eq(customers.isFriendsFamily, false) // Exclude friends & family customers
         )
       )
-      .groupBy(jobs.id, customers.id, customers.name, customers.price);
+      .groupBy(jobs.id, customers.id, customers.name, customers.price, customers.isFriendsFamily);
 
     // Calculate efficiency for each job and then average
     let totalEfficiency = 0;
@@ -1286,7 +1423,8 @@ router.get("/dashboard", async (req: Request, res: Response) => {
           .where(
             and(
               sql`${timeEntries.clockOutTime} >= ${startUTC.toISOString()}`,
-              sql`${timeEntries.clockOutTime} < ${endUTC.toISOString()}`
+              sql`${timeEntries.clockOutTime} < ${endUTC.toISOString()}`,
+              eq(customers.isFriendsFamily, false) // Exclude friends & family customers
             )
           )
           .groupBy(timeEntries.jobId, customers.price)
@@ -1313,7 +1451,8 @@ router.get("/dashboard", async (req: Request, res: Response) => {
         and(
           sql`${timeEntries.clockOutTime} >= ${startUTC.toISOString()}`,
           sql`${timeEntries.clockOutTime} < ${endUTC.toISOString()}`,
-          sql`${timeEntries.clockOutTime} IS NOT NULL`
+          sql`${timeEntries.clockOutTime} IS NOT NULL`,
+          eq(customers.isFriendsFamily, false) // Exclude friends & family customers
         )
       );
 
@@ -1435,7 +1574,7 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
     // Group by user and calculate daily hours
     const userTimesheets = new Map();
     let totalHours = 0;
-    let totalJobs = 0;
+    let allJobIds = new Set();
 
     // First, group entries by user and day to calculate daily time spans
     const userDailyEntries = new Map();
@@ -1475,6 +1614,10 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
       
       if (entry.clockOutTime && (!dailyData.lastClockOut || entry.clockOutTime > dailyData.lastClockOut)) {
         dailyData.lastClockOut = entry.clockOutTime;
+      }
+      // Track unique jobIds for completed cleans
+      if (entry.jobId && entry.clockOutTime) {
+        allJobIds.add(entry.jobId);
       }
     });
 
@@ -1640,13 +1783,12 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
       timesheet[dayKeyName].hours = Math.round(dailyHours * 100) / 100; // Round to 2 decimal places
       timesheet[dayKeyName].jobs = dailyData.entries.length;
       timesheet[dayKeyName].lunchBreak = lunchBreakApplied;
-      timesheet[dayKeyName].startTime = dailyData.firstClockIn ? dailyData.firstClockIn.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : null;
-      timesheet[dayKeyName].endTime = dailyData.lastClockOut ? dailyData.lastClockOut.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : null;
+      timesheet[dayKeyName].startTime = dailyData.firstClockIn ? dailyData.firstClockIn.toISOString() : null;
+      timesheet[dayKeyName].endTime = dailyData.lastClockOut ? dailyData.lastClockOut.toISOString() : null;
       timesheet[dayKeyName].lunchBreakDebug = lunchBreakDebug;
       timesheet.totalHours += dailyHours;
       timesheet.totalJobs += dailyData.entries.length;
       totalHours += dailyHours;
-      totalJobs += dailyData.entries.length;
     });
 
     const weeklyData = Array.from(userTimesheets.values());
@@ -1662,7 +1804,7 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
         weekly: weeklyData,
         stats: {
           totalHours: Math.round(totalHours * 100) / 100,
-          totalJobs
+          totalJobs: allJobIds.size
         }
       }
     });
@@ -2083,7 +2225,8 @@ async function calculateCustomerMetrics(customerId: number) {
       .select({
         id: customers.id,
         name: customers.name,
-        price: customers.price
+        price: customers.price,
+        isFriendsFamily: customers.isFriendsFamily
       })
       .from(customers)
       .where(eq(customers.id, customerId))
@@ -2095,6 +2238,12 @@ async function calculateCustomerMetrics(customerId: number) {
     }
 
     const customer = customerInfo[0];
+
+    // Skip metrics calculation for friends & family customers
+    if (customer.isFriendsFamily) {
+      console.log(`Skipping metrics calculation for friends & family customer: ${customer.name}`);
+      return;
+    }
 
     // Get all completed jobs for this customer
     const completedJobs = await db
@@ -2218,13 +2367,20 @@ router.post("/customers/calculate-metrics", async (req: Request, res: Response) 
       .select({
         id: customers.id,
         name: customers.name,
-        price: customers.price
+        price: customers.price,
+        isFriendsFamily: customers.isFriendsFamily
       })
       .from(customers);
 
     const updatedCustomers = [];
 
     for (const customer of allCustomers) {
+      // Skip metrics calculation for friends & family customers
+      if (customer.isFriendsFamily) {
+        console.log(`Skipping metrics calculation for friends & family customer: ${customer.name}`);
+        continue;
+      }
+
       // Get all completed jobs for this customer
       const completedJobs = await db
         .select({
@@ -2419,5 +2575,78 @@ export const broadcastDashboardUpdate = (eventType: string, data: any) => {
     }
   });
 };
+
+// === PAYROLL SETTINGS ===
+
+// Get all payroll settings
+router.get("/settings/payroll", async (req, res) => {
+  try {
+    const settingsKeys = [
+      "staff_pay_rate_per_hour",
+      "staff_start_time",
+      "lunch_break_min_hours",
+      "lunch_break_duration_minutes",
+      "lunch_break_start_time",
+      "lunch_break_finish_time"
+    ];
+    const settingsRows = await db
+      .select()
+      .from(settings)
+      .where(inArray(settings.key, settingsKeys));
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      settingsMap[row.key] = row.value;
+    }
+    const responseData = {
+      payRatePerHour: Number(settingsMap["staff_pay_rate_per_hour"] ?? 32.31),
+      staffStartTime: settingsMap["staff_start_time"] ?? "08:00",
+      lunchBreakMinHours: Number(settingsMap["lunch_break_min_hours"] ?? 5),
+      lunchBreakDurationMinutes: Number(settingsMap["lunch_break_duration_minutes"] ?? 30),
+      lunchBreakStartTime: settingsMap["lunch_break_start_time"] ?? "09:00",
+      lunchBreakFinishTime: settingsMap["lunch_break_finish_time"] ?? "17:00"
+    };
+    res.json({ success: true, data: responseData });
+  } catch (error) {
+    console.error("Error fetching payroll settings:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch payroll settings" });
+  }
+});
+
+// Update all payroll settings
+router.put("/settings/payroll", async (req, res) => {
+  try {
+    const {
+      payRatePerHour,
+      staffStartTime,
+      lunchBreakMinHours,
+      lunchBreakDurationMinutes,
+      lunchBreakStartTime,
+      lunchBreakFinishTime
+    } = req.body;
+    const updates = [
+      { key: "staff_pay_rate_per_hour", value: String(payRatePerHour ?? 32.31) },
+      { key: "staff_start_time", value: staffStartTime ?? "08:00" },
+      { key: "lunch_break_min_hours", value: String(lunchBreakMinHours ?? 5) },
+      { key: "lunch_break_duration_minutes", value: String(lunchBreakDurationMinutes ?? 30) },
+      { key: "lunch_break_start_time", value: lunchBreakStartTime ?? "09:00" },
+      { key: "lunch_break_finish_time", value: lunchBreakFinishTime ?? "17:00" }
+    ];
+    for (const { key, value } of updates) {
+      try {
+        await db
+          .insert(settings)
+          .values({ key, value })
+          .onConflictDoUpdate({ target: settings.key, set: { value } });
+      } catch (upsertError) {
+        console.error(`[Payroll Settings] Upsert failed for ${key}:`, upsertError);
+        throw upsertError;
+      }
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error updating payroll settings:", error);
+    res.status(500).json({ success: false, error: "Failed to update payroll settings", details: error instanceof Error ? error.message : error });
+  }
+});
 
 export default router; 

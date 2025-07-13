@@ -37,6 +37,7 @@ interface Clean {
     teamName?: string;
     teamColor?: string;
   }[];
+  isFriendsFamily?: boolean;
 }
 
 export function AdminDashboard() {
@@ -683,7 +684,10 @@ export function AdminDashboard() {
                             </svg>
                             <p className="text-sm text-gray-500">
                               ${clean.price}
-                              {clean.wageRatio !== undefined && (
+                              {clean.isFriendsFamily && (
+                                <span className="text-black-500"> for Friends & Family</span>
+                              )}
+                              {clean.wageRatio !== undefined && clean.wageRatio > 0 && (
                                 <span>
                                   {" "}at <span className={getWageRatioStatus(clean.wageRatio).color}>{clean.wageRatio}%</span> Wage Ratio
                                 </span>

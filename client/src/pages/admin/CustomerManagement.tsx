@@ -20,6 +20,8 @@ interface Customer {
   cleanFrequency: string;
   targetTimeMinutes?: number;
   averageWageRatio?: number;
+  isFriendsFamily?: boolean;
+  friendsFamilyMinutes?: number;
   active: boolean;
   latitude: string;
   longitude: string;
@@ -82,7 +84,9 @@ export function CustomerManagement() {
     email: "",
     notes: "",
     price: "",
-    cleanFrequency: "weekly"
+    cleanFrequency: "weekly",
+    isFriendsFamily: false,
+    friendsFamilyMinutes: ""
   });
   const [editCustomer, setEditCustomer] = useState({
     name: "",
@@ -91,7 +95,9 @@ export function CustomerManagement() {
     email: "",
     notes: "",
     price: "",
-    cleanFrequency: "weekly"
+    cleanFrequency: "weekly",
+    isFriendsFamily: false,
+    friendsFamilyMinutes: ""
   });
 
   // Add Google Maps hook at component level
@@ -176,7 +182,9 @@ export function CustomerManagement() {
           email: "",
           notes: "",
           price: "",
-          cleanFrequency: "weekly"
+          cleanFrequency: "weekly",
+          isFriendsFamily: false,
+          friendsFamilyMinutes: ""
         });
         setShowAddForm(false);
         fetchCustomers(); // Refresh the list
@@ -201,7 +209,9 @@ export function CustomerManagement() {
       email: customer.email || "",
       notes: customer.notes || "",
       price: customer.price.toString(),
-      cleanFrequency: customer.cleanFrequency
+      cleanFrequency: customer.cleanFrequency,
+      isFriendsFamily: customer.isFriendsFamily || false,
+      friendsFamilyMinutes: customer.friendsFamilyMinutes?.toString() || ""
     });
   };
 
@@ -595,6 +605,34 @@ export function CustomerManagement() {
                     </SelectContent>
                   </Select>
                 </div>
+                {/* Friends & Family row (Add Customer) */}
+                <div className="flex items-center space-x-4 mt-2">
+                  <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mr-2" htmlFor="isFriendsFamily">
+                    Friends & Family
+                  </label>
+                  <input
+                    type="checkbox"
+                    id="isFriendsFamily"
+                    checked={newCustomer.isFriendsFamily}
+                    onChange={(e) => setNewCustomer(prev => ({ ...prev, isFriendsFamily: e.target.checked }))}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                  />
+                  {newCustomer.isFriendsFamily && (
+                    <div className="flex items-center space-x-2 ml-2">
+                      <label className="text-sm font-medium leading-none" htmlFor="friendsFamilyMinutes">
+                        Cleaning duration (min)
+                      </label>
+                      <input
+                        type="number"
+                        id="friendsFamilyMinutes"
+                        value={newCustomer.friendsFamilyMinutes}
+                        onChange={(e) => setNewCustomer(prev => ({ ...prev, friendsFamilyMinutes: e.target.value }))}
+                        placeholder="e.g., 30"
+                        className="flex h-10 w-24 rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
                 <div>
                   <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="notes">
                     Notes
@@ -751,6 +789,34 @@ export function CustomerManagement() {
                       <SelectItem value="one-off">One-off</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                {/* Friends & Family row (Edit Customer) */}
+                <div className="flex items-center space-x-4 mt-2">
+                  <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 mr-2" htmlFor="isFriendsFamily">
+                    Friends & Family
+                  </label>
+                  <input
+                    type="checkbox"
+                    id="isFriendsFamily"
+                    checked={editCustomer.isFriendsFamily}
+                    onChange={(e) => setEditCustomer(prev => ({ ...prev, isFriendsFamily: e.target.checked }))}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                  />
+                  {editCustomer.isFriendsFamily && (
+                    <div className="flex items-center space-x-2 ml-2">
+                      <label className="text-sm font-medium leading-none" htmlFor="friendsFamilyMinutes">
+                        Cleaning duration (min)
+                      </label>
+                      <input
+                        type="number"
+                        id="friendsFamilyMinutes"
+                        value={editCustomer.friendsFamilyMinutes}
+                        onChange={(e) => setEditCustomer(prev => ({ ...prev, friendsFamilyMinutes: e.target.value }))}
+                        placeholder="e.g., 30"
+                        className="flex h-10 w-24 rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" htmlFor="edit-notes">
