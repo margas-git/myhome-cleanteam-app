@@ -29,9 +29,12 @@ interface ClockInModalProps {
   onClose: () => void;
   onSuccess: () => void;
   allottedMinutes?: number;
+  preloadedTeams?: Team[];
+  preloadedTeamMembers?: { [teamId: number]: TeamMember[] };
+  preloadedOtherTeamMembers?: TeamMember[];
 }
 
-export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMinutes }: ClockInModalProps) {
+export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMinutes, preloadedTeams, preloadedTeamMembers, preloadedOtherTeamMembers }: ClockInModalProps) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -54,12 +57,19 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
 
   useEffect(() => {
     if (isOpen) {
-      fetchTeams();
+      if (preloadedTeams) {
+        setTeams(preloadedTeams);
+        if (preloadedTeams.length === 1) {
+          setSelectedTeam(preloadedTeams[0].id);
+        }
+      } else {
+        fetchTeams();
+      }
       if (!customer) {
         fetchAllCustomers();
       }
     }
-  }, [isOpen, customer]);
+  }, [isOpen, customer, preloadedTeams]);
 
   useEffect(() => {
     setSelectedCustomer(customer);
@@ -82,9 +92,14 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
 
   useEffect(() => {
     if (selectedTeam) {
-      fetchTeamMembers(selectedTeam);
+      if (preloadedTeamMembers && preloadedTeamMembers[selectedTeam]) {
+        setTeamMembers(preloadedTeamMembers[selectedTeam]);
+        setSelectedMembers(preloadedTeamMembers[selectedTeam].map((member: TeamMember) => member.id));
+      } else {
+        fetchTeamMembers(selectedTeam);
+      }
     }
-  }, [selectedTeam]);
+  }, [selectedTeam, preloadedTeamMembers]);
 
   const fetchTeams = async () => {
     try {
@@ -137,14 +152,29 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
   };
 
   const fetchOtherTeamMembers = async () => {
+    if (!selectedTeam) {
+      console.error("No team selected");
+      return;
+    }
+    
+    console.log("🔍 Fetching other team members for team:", selectedTeam);
+    
     try {
-      const response = await fetch(buildApiUrl("/api/staff/teams/other-members"), {
+      const url = buildApiUrl(`/api/staff/teams/other-members?teamId=${selectedTeam}`);
+      console.log("📡 API URL:", url);
+      
+      const response = await fetch(url, {
         credentials: "include"
       });
       
+      console.log("📥 Response status:", response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log("📋 Received data:", data);
         setOtherTeamMembers(data.data || []);
+      } else {
+        console.error("❌ API error:", response.status, response.statusText);
       }
     } catch (error) {
       console.error("Failed to fetch other team members:", error);
@@ -193,7 +223,17 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
 
   const handleOpenAddMemberModal = () => {
     setShowAddMemberModal(true);
-    fetchOtherTeamMembers();
+    
+    // Use pre-loaded data if available, otherwise fetch
+    if (preloadedOtherTeamMembers && selectedTeam) {
+      // Filter the pre-loaded data for the current team
+      const filteredOtherMembers = preloadedOtherTeamMembers.filter(member => 
+        member.teamId !== selectedTeam
+      );
+      setOtherTeamMembers(filteredOtherMembers);
+    } else {
+      fetchOtherTeamMembers();
+    }
   };
 
   const handleClockIn = async () => {
@@ -239,6 +279,9 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
   const getMemberTeam = (memberId: number) => {
     const member = otherTeamMembers.find(m => m.id === memberId);
     if (member) {
+      if (member.teamId === null) {
+        return 'Unassigned';
+      }
       const team = teams.find(t => t.id === member.teamId);
       return team?.name || 'Unknown Team';
     }
@@ -280,7 +323,19 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
                       <div className="font-medium text-black">{selectedCustomer.name}</div>
                       <div className="text-sm text-gray-600">{selectedCustomer.address ? formatAddress(selectedCustomer.address) : ''}</div>
                       {allottedMinutes && (
-                        <div className="text-xs text-blue-600 mt-1">Allowed time target: <span className="font-semibold">{allottedMinutes} min</span></div>
+                        <div className="text-xs text-blue-600 mt-1">
+                          Estimated completion time: <span className="font-semibold">
+                            {(() => {
+                              const now = new Date();
+                              const completionTime = new Date(now.getTime() + allottedMinutes * 60000);
+                              return completionTime.toLocaleTimeString('en-US', { 
+                                hour: 'numeric', 
+                                minute: '2-digit',
+                                hour12: true 
+                              });
+                            })()}
+                          </span>
+                        </div>
                       )}
                     </div>
                     <button 
@@ -328,31 +383,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
               )}
             </div>
 
-            {/* Customer Location Map */}
-            {selectedCustomer && apiKey && (
-              <>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                      <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path>
-                      <circle cx="12" cy="10" r="3"></circle>
-                    </svg>
-                    Customer Location
-                  </label>
-                  <div className="border rounded-lg overflow-hidden mb-2">
-                    <iframe 
-                      width="100%" 
-                      height="200" 
-                      loading="lazy" 
-                      allowFullScreen
-                      src={`https://www.google.com/maps/embed/v1/place?key=${apiKey}&q=${encodeURIComponent(selectedCustomer.address ? formatAddress(selectedCustomer.address) : '')}&zoom=17&maptype=roadmap`}
-                      style={{ border: 0 }}
-                    />
-                  </div>
-                </div>
-                {/* Street View images removed as requested */}
-              </>
-            )}
+
 
             {/* Team Selection */}
             {teams.length > 1 && (
@@ -609,7 +640,6 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
                             </div>
                             <div className="flex-1">
                               <span className="text-sm font-medium">{member.firstName} {member.lastName}</span>
-                              <div className="text-xs text-gray-500">{getMemberTeam(member.id)}</div>
                             </div>
                           </label>
                         </div>

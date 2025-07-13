@@ -242,6 +242,9 @@ export function StaffDashboard() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [preloadedTeams, setPreloadedTeams] = useState<any[]>([]);
+  const [preloadedTeamMembers, setPreloadedTeamMembers] = useState<{ [teamId: number]: any[] }>({});
+  const [preloadedOtherTeamMembers, setPreloadedOtherTeamMembers] = useState<any[]>([]);
 
   useEffect(() => {
     if (loading) return;
@@ -297,9 +300,10 @@ export function StaffDashboard() {
 
   const fetchData = async () => {
     try {
-      const [activeJobResponse, completedResponse] = await Promise.all([
+      const [activeJobResponse, completedResponse, teamsResponse] = await Promise.all([
         fetch(buildApiUrl("/api/staff/active-job"), { credentials: "include" }),
-        fetch(buildApiUrl("/api/staff/completed-today"), { credentials: "include" })
+        fetch(buildApiUrl("/api/staff/completed-today"), { credentials: "include" }),
+        fetch(buildApiUrl("/api/staff/teams"), { credentials: "include" })
       ]);
 
       if (activeJobResponse.ok) {
@@ -310,6 +314,45 @@ export function StaffDashboard() {
       if (completedResponse.ok) {
         const completedData = await completedResponse.json();
         setCompletedToday(completedData.data);
+      }
+
+      if (teamsResponse.ok) {
+        const teamsData = await teamsResponse.json();
+        setPreloadedTeams(teamsData.data);
+        
+        // Fetch team members for each team
+        const teamMembersData: { [teamId: number]: any[] } = {};
+        await Promise.all(
+          teamsData.data.map(async (team: any) => {
+            try {
+              const membersResponse = await fetch(buildApiUrl(`/api/staff/teams/${team.id}/members`), {
+                credentials: "include"
+              });
+              if (membersResponse.ok) {
+                const membersData = await membersResponse.json();
+                teamMembersData[team.id] = membersData.data || [];
+              }
+            } catch (error) {
+              console.error(`Failed to fetch members for team ${team.id}:`, error);
+            }
+          })
+        );
+        setPreloadedTeamMembers(teamMembersData);
+        
+        // Fetch other team members (for the first team as default)
+        if (teamsData.data.length > 0) {
+          try {
+            const otherMembersResponse = await fetch(buildApiUrl(`/api/staff/teams/other-members?teamId=${teamsData.data[0].id}`), {
+              credentials: "include"
+            });
+            if (otherMembersResponse.ok) {
+              const otherMembersData = await otherMembersResponse.json();
+              setPreloadedOtherTeamMembers(otherMembersData.data || []);
+            }
+          } catch (error) {
+            console.error("Failed to fetch other team members:", error);
+          }
+        }
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
@@ -902,6 +945,9 @@ export function StaffDashboard() {
         onClose={() => setShowClockInModal(false)}
         onSuccess={handleClockInSuccess}
         allottedMinutes={selectedCustomer ? getAllottedMinutes(selectedCustomer.price) : undefined}
+        preloadedTeams={preloadedTeams}
+        preloadedTeamMembers={preloadedTeamMembers}
+        preloadedOtherTeamMembers={preloadedOtherTeamMembers}
       />
 
       <ClockOutModal

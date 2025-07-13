@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db/connection.js";
 import { teams, customers, timeEntries, jobs, teamsUsers, users, settings, timeAllocationTiers } from "../db/schema.js";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, or } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 import { calculateCustomerMetrics } from "./admin.js";
 
@@ -506,25 +506,22 @@ router.get("/time-entries/current", async (req: Request, res: Response) => {
 // Get other team members (members from other teams)
 router.get("/teams/other-members", async (req: Request, res: Response) => {
   try {
-    const userId = req.user!.id;
-
-    // Get user's current team
-    const userTeam = await db
-      .select({ teamId: teamsUsers.teamId })
-      .from(teamsUsers)
-      .where(eq(teamsUsers.userId, userId))
-      .limit(1);
-
-    if (userTeam.length === 0) {
-      return res.status(404).json({
+    const { teamId } = req.query;
+    
+    console.log("🔍 Other team members request - teamId:", teamId, "query:", req.query);
+    
+    if (!teamId) {
+      console.log("❌ No teamId provided");
+      return res.status(400).json({
         success: false,
-        error: "No team found for user"
+        error: "Team ID is required"
       });
     }
 
-    const currentTeamId = userTeam[0].teamId;
+    const selectedTeamId = parseInt(teamId as string);
+    console.log("✅ Selected team ID:", selectedTeamId);
 
-    // Get all team members from other teams
+    // Get all staff members who are not in the selected team (including unassigned staff)
     const otherTeamMembers = await db
       .select({
         id: users.id,
@@ -532,10 +529,19 @@ router.get("/teams/other-members", async (req: Request, res: Response) => {
         lastName: users.lastName,
         teamId: teamsUsers.teamId
       })
-      .from(teamsUsers)
-      .innerJoin(users, eq(teamsUsers.userId, users.id))
-      .where(sql`${teamsUsers.teamId} != ${currentTeamId}`);
+      .from(users)
+      .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
+      .where(
+        and(
+          eq(users.role, "staff"),
+          or(
+            sql`${teamsUsers.teamId} IS NULL`,
+            sql`${teamsUsers.teamId} != ${selectedTeamId}`
+          )
+        )
+      );
 
+    console.log("📋 Found other team members:", otherTeamMembers.length);
     res.json({ success: true, data: otherTeamMembers });
   } catch (error) {
     console.error("Error fetching other team members:", error);
