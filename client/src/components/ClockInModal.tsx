@@ -318,32 +318,24 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
               <label className="text-sm font-medium text-gray-700">Customer</label>
               {selectedCustomer ? (
                 <div className="p-3 border rounded-lg bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-black">{selectedCustomer.name}</div>
-                      <div className="text-sm text-gray-600">{selectedCustomer.address ? formatAddress(selectedCustomer.address) : ''}</div>
-                      {allottedMinutes && (
-                        <div className="text-xs text-blue-600 mt-1">
-                          Estimated completion time: <span className="font-semibold">
-                            {(() => {
-                              const now = new Date();
-                              const completionTime = new Date(now.getTime() + allottedMinutes * 60000);
-                              return completionTime.toLocaleTimeString('en-US', { 
-                                hour: 'numeric', 
-                                minute: '2-digit',
-                                hour12: true 
-                              });
-                            })()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <button 
-                      onClick={() => setSelectedCustomer(null)}
-                      className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-gray-300 bg-white hover:bg-gray-50 h-9 rounded-md px-3"
-                    >
-                      Change
-                    </button>
+                  <div>
+                    <div className="font-medium text-black">{selectedCustomer.name}</div>
+                    <div className="text-sm text-gray-600">{selectedCustomer.address ? formatAddress(selectedCustomer.address) : ''}</div>
+                    {allottedMinutes && (
+                      <div className="text-xs text-blue-600 mt-1">
+                        Target completion time: <span className="font-semibold">
+                          {(() => {
+                            const now = new Date();
+                            const completionTime = new Date(now.getTime() + allottedMinutes * 60000);
+                            return completionTime.toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true 
+                            });
+                          })()}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

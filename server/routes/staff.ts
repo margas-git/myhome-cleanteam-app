@@ -59,6 +59,29 @@ router.get("/team", async (req: Request, res: Response) => {
   }
 });
 
+// Get price tiers for staff
+router.get("/price-tiers", async (req: Request, res: Response) => {
+  try {
+    const tiers = await db
+      .select({
+        id: timeAllocationTiers.id,
+        priceMin: timeAllocationTiers.priceMin,
+        priceMax: timeAllocationTiers.priceMax,
+        allottedMinutes: timeAllocationTiers.allottedMinutes
+      })
+      .from(timeAllocationTiers)
+      .orderBy(timeAllocationTiers.priceMin);
+
+    res.json({
+      success: true,
+      data: tiers
+    });
+  } catch (error) {
+    console.error("Error fetching price tiers:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch price tiers" });
+  }
+});
+
 // Get active customers
 router.get("/customers", async (req: Request, res: Response) => {
   try {

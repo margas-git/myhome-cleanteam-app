@@ -211,20 +211,12 @@ function StreetViewImage({ address, className = "", isBackground = false, loadNe
 
 export { StreetViewImage };
 
-// Price tiers for allottedMinutes (should match backend)
-const priceTiers = [
-  { min: 0, max: 199, minutes: 90 },
-  { min: 200, max: 299, minutes: 120 },
-  { min: 300, max: 399, minutes: 150 },
-  { min: 400, max: 499, minutes: 180 },
-  { min: 500, max: 999999, minutes: 240 }
-];
-
-function getAllottedMinutes(price: number | string | undefined) {
-  if (!price) return undefined;
-  const priceNum = typeof price === 'string' ? parseFloat(price) : price;
-  const tier = priceTiers.find(t => priceNum >= t.min && priceNum <= t.max);
-  return tier ? tier.minutes : undefined;
+// Remove hardcoded price tiers and replace with dynamic fetching
+interface PriceTier {
+  id: number;
+  priceMin: string | number;
+  priceMax: string | number;
+  allottedMinutes: number;
 }
 
 export function StaffDashboard() {
@@ -245,6 +237,7 @@ export function StaffDashboard() {
   const [preloadedTeams, setPreloadedTeams] = useState<any[]>([]);
   const [preloadedTeamMembers, setPreloadedTeamMembers] = useState<{ [teamId: number]: any[] }>({});
   const [preloadedOtherTeamMembers, setPreloadedOtherTeamMembers] = useState<any[]>([]);
+  const [priceTiers, setPriceTiers] = useState<PriceTier[]>([]);
 
   useEffect(() => {
     if (loading) return;
@@ -254,7 +247,39 @@ export function StaffDashboard() {
     }
     
     fetchData();
+    fetchPriceTiers();
   }, [user, loading, setLocation]);
+
+  // Fetch price tiers from settings
+  const fetchPriceTiers = async () => {
+    try {
+      const response = await fetch(buildApiUrl("/api/staff/price-tiers"), {
+        credentials: "include"
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setPriceTiers(data.data);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch price tiers:", error);
+    }
+  };
+
+  // Get allotted minutes based on price and fetched tiers
+  const getAllottedMinutes = (price: number | string | undefined) => {
+    if (!price || priceTiers.length === 0) {
+      return undefined;
+    }
+    const priceNum = typeof price === 'string' ? parseFloat(price) : price;
+    const tier = priceTiers.find(t => {
+      const minPrice = typeof t.priceMin === 'string' ? parseFloat(t.priceMin) : t.priceMin;
+      const maxPrice = typeof t.priceMax === 'string' ? parseFloat(t.priceMax) : t.priceMax;
+      return priceNum >= minPrice && priceNum <= maxPrice;
+    });
+    return tier ? tier.allottedMinutes : undefined;
+  };
 
   // Fetch customers only when location is available
   useEffect(() => {
@@ -564,7 +589,6 @@ export function StaffDashboard() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
-              {getLocationStatusIcon()}
               <button
                 onClick={logout}
                 className="inline-flex items-center px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 bg-white/50 hover:bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200"
@@ -774,8 +798,11 @@ export function StaffDashboard() {
         ) : (
           /* Nearby Customers - Modern Minimal Design */
           <div className="mb-8">
-            <div className="mb-6">
+            <div className="mb-6 flex items-center justify-between">
               <h2 className="text-2xl font-bold text-black">Nearby Customers</h2>
+              <div className="flex items-center space-x-3">
+                {getLocationStatusIcon()}
+              </div>
             </div>
             
             {nearbyCustomers.length > 0 ? (
