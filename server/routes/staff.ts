@@ -679,18 +679,24 @@ router.post("/time-entries/clock-out", async (req: Request, res: Response) => {
     }
 
     // Check if the job is fully completed (all team members have clocked out)
-    const remainingActiveEntries = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(timeEntries)
-      .where(
-        and(
-          eq(timeEntries.jobId, jobId),
-          sql`${timeEntries.clockOutTime} IS NULL`
-        )
-      );
-
-    // If no active entries remain, the job is fully completed
-    if (remainingActiveEntries[0].count === 0) {
+    // If we clocked out all members, the job is definitely completed
+    // For partial clock-outs, check if any active entries remain
+    let isJobCompleted = clockOutAllMembers;
+    
+    if (!clockOutAllMembers) {
+      const remainingActiveEntries = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(timeEntries)
+        .where(
+          and(
+            eq(timeEntries.jobId, jobId),
+            sql`${timeEntries.clockOutTime} IS NULL`
+          )
+        );
+      isJobCompleted = remainingActiveEntries[0].count === 0;
+    }
+    
+    if (isJobCompleted) {
       console.log(`Job ${jobId} is fully completed, calculating customer metrics...`);
       // Update the job status to 'completed'
       await db.update(jobs)
@@ -717,7 +723,7 @@ router.post("/time-entries/clock-out", async (req: Request, res: Response) => {
       broadcastDashboardUpdate('staff_clocked_out', {
         jobId,
         clockedOutMembers: updatedEntries.length,
-        isJobCompleted: remainingActiveEntries[0].count === 0,
+        isJobCompleted: isJobCompleted,
         timestamp: clockOutTime
       });
     } catch (error) {

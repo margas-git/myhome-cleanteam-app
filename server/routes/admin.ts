@@ -1120,37 +1120,24 @@ router.post("/cleans/end-active", async (req: Request, res: Response) => {
       updatedEntries.push(updatedEntry);
     }
 
-    // Check if the job is fully completed (all team members have clocked out)
-    const remainingActiveEntries = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(timeEntries)
-      .where(
-        and(
-          eq(timeEntries.jobId, jobId),
-          sql`${timeEntries.clockOutTime} IS NULL`
-        )
-      );
-
-    // If no active entries remain, the job is fully completed
-    if (remainingActiveEntries[0].count === 0) {
-      console.log(`Job ${jobId} is fully completed (admin), calculating customer metrics...`);
-      // Update the job status to 'completed'
-      await db.update(jobs)
-        .set({ status: 'completed' })
-        .where(eq(jobs.id, jobId));
-      // Get the customer ID for this job
-      const jobInfo = await db
-        .select({ customerId: jobs.customerId })
-        .from(jobs)
-        .where(eq(jobs.id, jobId))
-        .limit(1);
-      if (jobInfo.length > 0 && jobInfo[0].customerId) {
-        const customerId = jobInfo[0].customerId;
-        // Calculate metrics for this customer in the background (don't wait for it)
-        calculateCustomerMetrics(customerId).catch(error => {
-          console.error(`Background metrics calculation failed for customer ${customerId}:`, error);
-        });
-      }
+    // Since we clocked out ALL active entries for this job, it's definitely completed
+    console.log(`Job ${jobId} is fully completed (admin), calculating customer metrics...`);
+    // Update the job status to 'completed'
+    await db.update(jobs)
+      .set({ status: 'completed' })
+      .where(eq(jobs.id, jobId));
+    // Get the customer ID for this job
+    const jobInfo = await db
+      .select({ customerId: jobs.customerId })
+      .from(jobs)
+      .where(eq(jobs.id, jobId))
+      .limit(1);
+    if (jobInfo.length > 0 && jobInfo[0].customerId) {
+      const customerId = jobInfo[0].customerId;
+      // Calculate metrics for this customer in the background (don't wait for it)
+      calculateCustomerMetrics(customerId).catch(error => {
+        console.error(`Background metrics calculation failed for customer ${customerId}:`, error);
+      });
     }
 
     res.json({ 
