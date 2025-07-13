@@ -94,9 +94,10 @@ export function Navigation({ isOpen, onClose }: NavigationProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 border-b border-gray-200 h-[84px]">
           <div className="flex items-center h-full pt-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
+              <svg className="w-8 h-8" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="75" cy="75" r="75" fill="#592c81"/>
+                <path d="M51.88,124.89l11.26-52.91s-14.98-6.86-14.98-24.18,14.92-27.05,27-27.05,27.06,9.51,27.06,27.05-14.99,24.19-14.99,24.19l13.77,52.9h-49.12Z" fill="#fff" stroke="#999" strokeMiterlimit="10" strokeWidth="0.5"/>
               </svg>
             </div>
             <span className="ml-3 text-lg font-semibold text-gray-900 leading-none">MyHome CleanTeam</span>
