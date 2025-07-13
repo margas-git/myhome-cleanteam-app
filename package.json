@@ -5,9 +5,10 @@
   "main": "dist/server/index.js",
   "type": "module",
   "scripts": {
-    "dev": "npm run server:dev",
-    "server:dev": "tsx watch server/index.ts",
-    "client:dev": "vite client",
+    "dev": "npm run dev:server",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite client",
+    "kill": "lsof -ti:5173,4000 | xargs kill -9",
     "build": "npm run build:client && npm run build:server",
     "build:client": "cd client && vite build",
     "build:server": "tsc --project tsconfig.build.json",

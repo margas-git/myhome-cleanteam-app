@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
@@ -49,6 +50,11 @@ export function createServer() {
     }));
     app.use(express.json());
     app.use(cookieParser());
+    // Log all requests for debugging
+    app.use((req, res, next) => {
+        console.log(`${req.method} ${req.path}`);
+        next();
+    });
     // Health check
     app.get("/api/health", (_req, res) => res.json({ success: true, data: "ok" }));
     // Public routes
@@ -95,6 +101,11 @@ export function createServer() {
         const indexPath = resolve(__dirname, "../../client/dist/index.html");
         console.log("Static files path:", staticPath);
         console.log("Index file path:", indexPath);
+        console.log("NODE_ENV:", process.env.NODE_ENV);
+        console.log("__dirname:", __dirname);
+        // Debug: Check if files exist
+        console.log("Static path exists:", existsSync(staticPath));
+        console.log("Index file exists:", existsSync(indexPath));
         app.use(express.static(staticPath));
         // Serve the React app for all non-API routes
         app.get("*", (req, res) => {

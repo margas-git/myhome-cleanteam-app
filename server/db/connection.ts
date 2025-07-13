@@ -9,8 +9,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, "../../.env") });
 
-// Debug: Log the resolved path and check if file exists
-
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
