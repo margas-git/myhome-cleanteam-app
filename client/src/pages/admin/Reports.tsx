@@ -294,6 +294,65 @@ export function Reports() {
     return Math.round(totalHours * 100) / 100;
   };
 
+  const getWeekDateRange = () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    let startOfWeek: Date;
+    if (weekFilter === 'lastWeek') {
+      // Last week: go back 7 days from current week start
+      startOfWeek = new Date(today.getTime() - (dayOfWeek + 7) * 24 * 60 * 60 * 1000);
+    } else {
+      // This week: go back to Monday of current week
+      // If today is Sunday (0), we go back 6 days to get to Monday
+      // If today is Monday (1), we go back 0 days
+      // If today is Tuesday (2), we go back 1 day, etc.
+      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      startOfWeek = new Date(today.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
+    }
+    
+    const endOfWeek = new Date(startOfWeek.getTime() + 6 * 24 * 60 * 60 * 1000); // 6 days after start (7 days total, Monday to Sunday)
+    
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString('en-GB', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+      });
+    };
+    
+    return `${formatDate(startOfWeek)} - ${formatDate(endOfWeek)}`;
+  };
+
+  // Helper: Get abbreviated day names and their dates for the current week
+  const getWeekDaysWithDates = () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    let startOfWeek: Date;
+    if (weekFilter === 'lastWeek') {
+      startOfWeek = new Date(today.getTime() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1 + 7) * 24 * 60 * 60 * 1000);
+    } else {
+      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      startOfWeek = new Date(today.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
+    }
+    const days = [
+      { key: 'monday', label: 'Mon' },
+      { key: 'tuesday', label: 'Tue' },
+      { key: 'wednesday', label: 'Wed' },
+      { key: 'thursday', label: 'Thu' },
+      { key: 'friday', label: 'Fri' },
+      { key: 'saturday', label: 'Sat' },
+      { key: 'sunday', label: 'Sun' },
+    ];
+    return days.map((day, idx) => {
+      const date = new Date(startOfWeek.getTime() + idx * 24 * 60 * 60 * 1000);
+      const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+      return { ...day, dateStr };
+    });
+  };
+
   const handleLunchBreakToggle = async (staffName: string, day: string, newValue: boolean) => {
     const updateKey = `${staffName}-${day}`;
     setUpdatingLunchBreak(prev => new Set(prev).add(updateKey));
@@ -463,20 +522,26 @@ export function Reports() {
               {/* Weekly Timesheet - Full Width */}
               <div className="bg-white rounded-lg shadow">
                 <div className="px-6 py-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-900">Weekly Timesheet</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">Weekly Timesheet</h3>
+                    <span className="text-sm text-gray-500 font-medium">
+                      {getWeekDateRange()}
+                    </span>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff Member</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Monday</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Tuesday</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Wednesday</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Thursday</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Friday</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Saturday</th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sunday</th>
+                        {getWeekDaysWithDates().map(day => (
+                          <th key={day.key} className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <div className="flex flex-col items-center">
+                              <span>{day.label}</span>
+                              <span className="text-xs text-gray-400 font-normal">{day.dateStr}</span>
+                            </div>
+                          </th>
+                        ))}
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                       </tr>
                     </thead>
@@ -512,7 +577,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -551,7 +616,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -590,7 +655,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -629,7 +694,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -668,7 +733,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -707,7 +772,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -746,7 +811,7 @@ export function Reports() {
                                               '' :
                                               'text-red-600'
                                           ) : ''
-                                        }>{dayData.hours > 0 ? `${dayData.hours}h` : '-'}</span>
+                                        }>{dayData.hours > 0 ? `${dayData.hours}` : '-'}</span>
                                         {dayData.hours > 0 && (
                                           (() => {
                                             if (!lunchBreakSettings) {
@@ -774,7 +839,7 @@ export function Reports() {
                                 </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-center">
-                                {getAdjustedTotalHours(staff)}h
+                                {getAdjustedTotalHours(staff)}
                               </td>
                             </tr>
                             {isExpanded && (

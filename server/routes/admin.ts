@@ -1510,6 +1510,7 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
     
     // Calculate date range based on week filter
     const now = new Date();
+    // Use local time to match frontend and time entry data
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
     
@@ -1519,12 +1520,22 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
       startOfWeek = new Date(today.getTime() - (dayOfWeek + 7) * 24 * 60 * 60 * 1000);
     } else {
       // This week: go back to Monday of current week
-      startOfWeek = new Date(today.getTime() - dayOfWeek * 24 * 60 * 60 * 1000);
+      // If today is Sunday (0), we go back 6 days to get to Monday
+      // If today is Monday (1), we go back 0 days
+      // If today is Tuesday (2), we go back 1 day, etc.
+      const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+      startOfWeek = new Date(today.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
     }
     
-    const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days after start (Monday to next Monday, includes all of Sunday)
 
-
+    // Debug logging
+    console.log('Timesheet Debug Info:');
+    console.log('Today:', today.toISOString());
+    console.log('Day of week:', dayOfWeek);
+    console.log('Week filter:', weekFilter);
+    console.log('Start of week:', startOfWeek.toISOString());
+    console.log('End of week:', endOfWeek.toISOString());
 
     // Get all time entries for the week
     // For debugging, if no entries found in current week, get all entries from the last 30 days
@@ -1546,6 +1557,11 @@ router.get("/reports/timesheets", async (req: Request, res: Response) => {
           sql`${timeEntries.clockInTime} < ${endOfWeek.toISOString()}`
         )
       );
+
+    console.log('Time entries found for week:', weekTimeEntries.length);
+    if (weekTimeEntries.length > 0) {
+      console.log('Sample time entry:', weekTimeEntries[0]);
+    }
 
     // If no entries found for current week, get recent entries for testing
     if (weekTimeEntries.length === 0) {
