@@ -33,7 +33,7 @@ export function createServer() {
         }));
     }
     // CORS configuration
-    const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam-wip.up.railway.app";
+    const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam.up.railway.app";
     // Allow localhost for development
     const allowedOrigins = [
         corsOrigin,

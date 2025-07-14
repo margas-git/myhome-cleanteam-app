@@ -9,7 +9,7 @@ const getApiBaseUrl = (): string => {
   }
   
   // In production, use the Railway URL
-  return 'https://myhome-cleanteam-wip.up.railway.app';
+  return 'https://myhome-cleanteam.up.railway.app';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
