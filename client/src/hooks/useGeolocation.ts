@@ -19,13 +19,6 @@ export function useGeolocation(): GeolocationState {
     }
 
     const success = (position: GeolocationPosition) => {
-      console.log('Geolocation success:', {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy + ' meters',
-        timestamp: new Date(position.timestamp).toLocaleString()
-      });
-      
       setLocation({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude

@@ -19,11 +19,8 @@ export function GoogleMapPreview({ address, className = "", isGoogleLoaded: exte
 
   useEffect(() => {
     if (!address || !mapRef.current || !isGoogleLoaded) {
-      console.log('GoogleMapPreview: Missing requirements', { address, mapRef: !!mapRef.current, isGoogleLoaded });
       return;
     }
-
-    console.log('GoogleMapPreview: Attempting to load map for address:', address);
 
     const geocodeAddress = () => {
       if (!window.google?.maps?.Geocoder) {
@@ -36,11 +33,9 @@ export function GoogleMapPreview({ address, className = "", isGoogleLoaded: exte
         const geocoder = new window.google.maps.Geocoder();
         
         geocoder.geocode({ address: address + ', Australia' }, (results: any[], status: string) => {
-          console.log('GoogleMapPreview: Geocoding result:', { status, resultsCount: results?.length });
           
           if (status === 'OK' && results[0]) {
             const location = results[0].geometry.location;
-            console.log('GoogleMapPreview: Location found:', location);
             
             // Create map
             mapInstance.current = new window.google.maps.Map(mapRef.current, {
@@ -67,7 +62,6 @@ export function GoogleMapPreview({ address, className = "", isGoogleLoaded: exte
               title: address
             });
             
-            console.log('GoogleMapPreview: Map created successfully');
           } else {
             console.error('GoogleMapPreview: Geocoding failed:', status);
             setMapError(true);

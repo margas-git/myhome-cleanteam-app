@@ -68,7 +68,6 @@ export function useGoogleMaps(apiKey?: string) {
           // Script is loading, wait for it
           const checkLoaded = () => {
             if (window.google && window.google.maps && window.google.maps.Geocoder) {
-              console.log('✅ Google Maps API is now available (existing script)');
               setLoaded(true);
               setIsLoading(false);
               window._googleMapsScriptLoaded = true;
@@ -109,28 +108,23 @@ export function useGoogleMaps(apiKey?: string) {
         script.defer = true;
         
         script.onload = () => {
-          console.log('🌐 Google Maps API script loaded successfully');
-          
-          // Add a timeout to check if the API is actually available
+          // Removed debug logs
           setTimeout(() => {
             if (window.google && window.google.maps && window.google.maps.Geocoder) {
-              console.log('✅ Google Maps API is now available');
               setLoaded(true);
               setIsLoading(false);
               window._googleMapsScriptLoading = false;
               window._googleMapsScriptLoaded = true;
             } else {
-              console.log('⏳ Google Maps API not ready yet, waiting 2 more seconds...');
               // Try again after another 2 seconds
               setTimeout(() => {
                 if (window.google && window.google.maps && window.google.maps.Geocoder) {
-                  console.log('✅ Google Maps API is now available (delayed)');
                   setLoaded(true);
                   setIsLoading(false);
                   window._googleMapsScriptLoading = false;
                   window._googleMapsScriptLoaded = true;
                 } else {
-                  console.error('❌ Google Maps script loaded but API not available after 3 seconds - may be blocked');
+                  console.error('Google Maps script loaded but API not available after 3 seconds - may be blocked');
                   setError('Google Maps API blocked - try disabling ad blocker');
                   setIsLoading(false);
                   window._googleMapsScriptLoading = false;

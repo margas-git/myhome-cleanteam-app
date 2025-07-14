@@ -31,8 +31,6 @@ interface Customer {
 // Reusable geocoding function
 const geocodeAddress = (address: string): Promise<{ latitude: number; longitude: number } | null> => {
   return new Promise((resolve) => {
-    console.log('🔍 Starting geocoding for address:', address);
-    console.log('🔍 Google Maps available:', !!window.google?.maps?.Geocoder);
     
     if (!window.google?.maps?.Geocoder) {
       console.error('❌ Google Maps Geocoder not available');
@@ -43,16 +41,13 @@ const geocodeAddress = (address: string): Promise<{ latitude: number; longitude:
     try {
       const geocoder = new window.google.maps.Geocoder();
       const searchAddress = address + ', Australia';
-      console.log('🔍 Searching for:', searchAddress);
       
       geocoder.geocode({ address: searchAddress }, (results: any[], status: string) => {
-        console.log('🔍 Geocoding result:', { status, resultsCount: results?.length });
         
         if (status === 'OK' && results[0]) {
           const location = results[0].geometry.location;
           const lat = location.lat();
           const lng = location.lng();
-          console.log('✅ Location found:', { lat, lng });
           
           resolve({
             latitude: lat,
@@ -114,14 +109,12 @@ export function CustomerManagement() {
 
   const fetchCustomers = async () => {
     try {
-      console.log('fetchCustomers called');
       const response = await fetch(buildApiUrl("/api/admin/customers"), {
         credentials: "include"
       });
       
       if (response.ok) {
         const data = await response.json();
-        console.log('Fetched customers:', data.data);
         setCustomers(data.data);
       } else {
         console.error('Failed to fetch customers, status:', response.status);
@@ -142,24 +135,17 @@ export function CustomerManagement() {
       let latitude = "-37.8136"; // Default Melbourne coordinates
       let longitude = "144.9631";
       
-      console.log('🔍 Adding customer with address:', newCustomer.address);
-      console.log('🔍 Google Maps loaded:', isGoogleLoaded);
-      
       if (isGoogleLoaded && newCustomer.address) {
-        console.log('🔍 Geocoding address for new customer:', newCustomer.address);
         const coordinates = await geocodeAddress(newCustomer.address);
         if (coordinates) {
           latitude = coordinates.latitude.toString();
           longitude = coordinates.longitude.toString();
-          console.log('✅ Geocoded coordinates:', { latitude, longitude });
         } else {
           console.log('❌ Geocoding failed, using default coordinates');
         }
       } else {
         console.log('❌ Google Maps not loaded or no address, using default coordinates');
       }
-
-      console.log('📤 Sending customer data with coordinates:', { latitude, longitude });
 
       const response = await fetch(buildApiUrl("/api/admin/customers"), {
         method: "POST",
@@ -216,11 +202,9 @@ export function CustomerManagement() {
   };
 
   const handleArchiveCustomer = async (customerId: number, isArchiving: boolean) => {
-    console.log('handleArchiveCustomer called:', { customerId, isArchiving });
     
     try {
       const requestBody = { active: !isArchiving };
-      console.log('Sending request body:', requestBody);
       
       const response = await fetch(buildApiUrl(`/api/admin/customers/${customerId}`), {
         method: "PUT",
@@ -231,12 +215,8 @@ export function CustomerManagement() {
         body: JSON.stringify(requestBody)
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-
       if (response.ok) {
         const result = await response.json();
-        console.log('Archive successful:', result);
         setEditingCustomer(null); // Close the popup
         fetchCustomers(); // Refresh the list
       } else {
@@ -260,26 +240,17 @@ export function CustomerManagement() {
       let latitude = editingCustomer.latitude;
       let longitude = editingCustomer.longitude;
       
-      console.log('🔍 Updating customer with address:', editCustomer.address);
-      console.log('🔍 Original address:', editingCustomer.address);
-      console.log('🔍 Google Maps loaded:', isGoogleLoaded);
-      console.log('🔍 Address changed:', editCustomer.address !== editingCustomer.address);
-      
       if (isGoogleLoaded && editCustomer.address !== editingCustomer.address) {
-        console.log('🔍 Geocoding updated address for customer:', editCustomer.address);
         const coordinates = await geocodeAddress(editCustomer.address);
         if (coordinates) {
           latitude = coordinates.latitude.toString();
           longitude = coordinates.longitude.toString();
-          console.log('✅ Updated geocoded coordinates:', { latitude, longitude });
         } else {
           console.log('❌ Geocoding failed, keeping original coordinates');
         }
       } else {
         console.log('❌ Google Maps not loaded or address unchanged, keeping original coordinates');
       }
-
-      console.log('📤 Sending updated customer data with coordinates:', { latitude, longitude });
 
       const response = await fetch(buildApiUrl(`/api/admin/customers/${editingCustomer.id}`), {
         method: "PUT",
@@ -381,12 +352,9 @@ export function CustomerManagement() {
           <button
             onClick={async () => {
               console.log('🧪 Testing geocoding...');
-              console.log('🔍 Google Maps loaded:', isGoogleLoaded);
               if (isGoogleLoaded) {
                 const testAddress = "123 Collins Street, Melbourne";
-                console.log('🧪 Testing with address:', testAddress);
                 const coords = await geocodeAddress(testAddress);
-                console.log('🧪 Test result:', coords);
                 if (coords) {
                   alert(`Test successful! Coordinates: ${coords.latitude}, ${coords.longitude}`);
                 } else {

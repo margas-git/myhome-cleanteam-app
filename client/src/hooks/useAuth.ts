@@ -30,6 +30,10 @@ export function useAuth() {
         setUser(data.data.user);
       } else {
         setUser(null);
+        // Only log error if not 401
+        if (response.status !== 401) {
+          console.error("Auth check failed with status:", response.status);
+        }
       }
     } catch (error) {
       console.error("Auth check failed:", error);

@@ -9,8 +9,6 @@ export async function getGoogleMapsApiKey(): Promise<string> {
   }
 
   // Use the new initialization endpoint for better reliability
-  console.log('🗺️ Initializing Google Maps from server... (v4 - RAILWAY REBUILD)');
-  
   try {
     const response = await fetch('/api/google-maps-init', {
       method: 'GET',
@@ -32,13 +30,9 @@ export async function getGoogleMapsApiKey(): Promise<string> {
     
     cachedApiKey = data.apiKey;
     
-    if (cachedApiKey) {
-      console.log('✅ Google Maps initialized successfully with API key');
-    }
-    
     return cachedApiKey || '';
   } catch (error) {
-    console.error('❌ Failed to initialize Google Maps:', error);
+    console.error('Failed to initialize Google Maps:', error);
     return '';
   }
 }

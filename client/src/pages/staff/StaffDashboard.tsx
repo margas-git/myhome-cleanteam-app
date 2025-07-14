@@ -391,7 +391,6 @@ export function StaffDashboard() {
       const response = await fetch(buildApiUrl("/api/staff/customers"), { credentials: "include" });
       if (response.ok) {
         const customersData = await response.json();
-        console.log('Staff Dashboard: Received', customersData.data.length, 'customers with coordinates');
         setCustomers(customersData.data);
         setRadiusMeters(customersData.radiusMeters || 50000);
       }
@@ -800,7 +799,7 @@ export function StaffDashboard() {
           /* Nearby Customers - Modern Minimal Design */
           <div className="mb-8">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-black">Nearby Customers</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Nearby Customers</h2>
               <div className="flex items-center space-x-3">
                 {getLocationStatusIcon()}
               </div>
@@ -899,7 +898,7 @@ export function StaffDashboard() {
         <div>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Completed Today</h2>
+              <h2 className="text-xl font-semibold text-gray-900">Completed Today</h2>
               <p className="text-sm text-gray-500">Your work summary</p>
             </div>
           </div>
