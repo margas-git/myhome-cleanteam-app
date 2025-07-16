@@ -3,6 +3,7 @@ import { db } from "../db/connection.js";
 import { users, teams, customers, timeEntries, jobs, teamsUsers, settings, lunchBreakOverrides, timeAllocationTiers } from "../db/schema.js";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { addUserToTeam, removeUserFromTeam, getTeamMembersAtDate, getUserTeamsAtDate, getCurrentUserTeams } from "../utils/teamUtils.js";
 
 const router = Router();
 
@@ -688,11 +689,11 @@ router.get("/teams/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Add staff to team
+// Add staff to team (TEMPORAL VERSION)
 router.post("/teams/:id/members", async (req: Request, res: Response) => {
   try {
     const teamId = parseInt(req.params.id);
-    const { userId } = req.body;
+    const { userId, startDate } = req.body;
 
     if (!userId) {
       return res.status(400).json({
@@ -701,81 +702,95 @@ router.post("/teams/:id/members", async (req: Request, res: Response) => {
       });
     }
 
-    // Check if user is already a member of any team
-    const existingTeamMembership = await db
-      .select({
-        teamId: teamsUsers.teamId,
-        teamName: teams.name
-      })
-      .from(teamsUsers)
-      .innerJoin(teams, eq(teamsUsers.teamId, teams.id))
-      .where(eq(teamsUsers.userId, userId))
-      .limit(1);
+    // Use the temporal utility function
+    const startDateObj = startDate ? new Date(startDate) : new Date();
+    await addUserToTeam(userId, teamId, startDateObj);
 
-    if (existingTeamMembership.length > 0) {
-      const existingTeam = existingTeamMembership[0];
-      return res.status(400).json({
-        success: false,
-        error: `User is already a member of team "${existingTeam.teamName}". Staff can only be assigned to one team at a time.`
-      });
-    }
-
-    // Check if assignment already exists for this specific team
-    const existing = await db
-      .select()
-      .from(teamsUsers)
-      .where(and(eq(teamsUsers.teamId, teamId), eq(teamsUsers.userId, userId)))
-      .limit(1);
-
-    if (existing.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: "User is already a member of this team"
-      });
-    }
-
-    await db
-      .insert(teamsUsers)
-      .values({
-        teamId,
-        userId
-      });
-
-    res.json({ success: true, data: { message: "User added to team successfully" } });
+    res.json({ 
+      success: true, 
+      data: { 
+        message: "User added to team successfully",
+        startDate: startDateObj.toISOString().split('T')[0]
+      } 
+    });
   } catch (error) {
     console.error("Error adding user to team:", error);
     res.status(500).json({ success: false, error: "Failed to add user to team" });
   }
 });
 
-// Remove staff from team
+// Remove staff from team (TEMPORAL VERSION)
 router.delete("/teams/:id/members/:userId", async (req: Request, res: Response) => {
   try {
     const teamId = parseInt(req.params.id);
     const userId = parseInt(req.params.userId);
+    const { endDate } = req.body; // Optional end date
 
-    // Check if assignment exists
-    const existing = await db
-      .select()
-      .from(teamsUsers)
-      .where(and(eq(teamsUsers.teamId, teamId), eq(teamsUsers.userId, userId)))
-      .limit(1);
+    // Use the temporal utility function
+    const endDateObj = endDate ? new Date(endDate) : new Date();
+    await removeUserFromTeam(userId, teamId, endDateObj);
 
-    if (existing.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: "User is not a member of this team"
-      });
-    }
-
-    await db
-      .delete(teamsUsers)
-      .where(and(eq(teamsUsers.teamId, teamId), eq(teamsUsers.userId, userId)));
-
-    res.json({ success: true, data: { message: "User removed from team successfully" } });
+    res.json({ 
+      success: true, 
+      data: { 
+        message: "User removed from team successfully",
+        endDate: endDateObj.toISOString().split('T')[0]
+      } 
+    });
   } catch (error) {
     console.error("Error removing user from team:", error);
     res.status(500).json({ success: false, error: "Failed to remove user from team" });
+  }
+});
+
+// Get team members at a specific date
+router.get("/teams/:id/members/:date", async (req: Request, res: Response) => {
+  try {
+    const teamId = parseInt(req.params.id);
+    const date = new Date(req.params.date);
+
+    const members = await getTeamMembersAtDate(teamId, date);
+
+    res.json({ 
+      success: true, 
+      data: {
+        teamId,
+        date: req.params.date,
+        members
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching team members:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch team members" });
+  }
+});
+
+// Get user's team history
+router.get("/users/:userId/teams", async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    const { date } = req.query;
+
+    let userTeams;
+    if (date) {
+      // Get teams at specific date
+      userTeams = await getUserTeamsAtDate(userId, new Date(date as string));
+    } else {
+      // Get current teams
+      userTeams = await getCurrentUserTeams(userId);
+    }
+
+    res.json({ 
+      success: true, 
+      data: {
+        userId,
+        date: date || 'current',
+        teams: userTeams
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching user teams:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch user teams" });
   }
 });
 
@@ -837,7 +852,15 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
           .innerJoin(users, eq(timeEntries.userId, users.id))
           .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
           .leftJoin(teams, eq(teamsUsers.teamId, teams.id))
-          .where(eq(timeEntries.jobId, job.jobId));
+          .where(
+            and(
+              eq(timeEntries.jobId, job.jobId),
+              // Only get current active team memberships
+              sql`${teamsUsers.startDate} <= CURRENT_DATE`,
+              sql`(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`,
+              eq(teams.active, true)
+            )
+          );
 
         // Calculate efficiency and wage ratio for this job
         let efficiency = 100; // Default to 100%
@@ -995,7 +1018,11 @@ router.get("/cleans/active", async (req: Request, res: Response) => {
           .where(
             and(
               eq(timeEntries.jobId, job.jobId),
-              sql`${timeEntries.clockOutTime} IS NULL`
+              sql`${timeEntries.clockOutTime} IS NULL`,
+              // Only get current active team memberships
+              sql`${teamsUsers.startDate} <= CURRENT_DATE`,
+              sql`(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`,
+              eq(teams.active, true)
             )
           );
 

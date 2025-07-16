@@ -1,9 +1,10 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db/connection.js";
 import { teams, customers, timeEntries, jobs, teamsUsers, users, settings, timeAllocationTiers } from "../db/schema.js";
-import { eq, and, sql, inArray, or } from "drizzle-orm";
+import { eq, and, sql, inArray, or, lte, gte, isNull } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 import { calculateCustomerMetrics } from "./admin.js";
+import { getCurrentTeamMembers, getCurrentUserTeams } from "../utils/teamUtils.js";
 
 const router = Router();
 
@@ -102,7 +103,9 @@ router.get("/customers", async (req: Request, res: Response) => {
         latitude: customers.latitude,
         longitude: customers.longitude,
         phone: customers.phone,
-        price: customers.price
+        price: customers.price,
+        isFriendsFamily: customers.isFriendsFamily,
+        friendsFamilyMinutes: customers.friendsFamilyMinutes
       })
       .from(customers)
       .where(eq(customers.active, true));
@@ -127,6 +130,8 @@ router.get("/active-job", async (req: Request, res: Response) => {
         customerName: customers.name,
         customerAddress: customers.address,
         customerPrice: customers.price,
+        isFriendsFamily: customers.isFriendsFamily,
+        friendsFamilyMinutes: customers.friendsFamilyMinutes,
         teamName: teams.name,
         teamColor: teams.colorHex
       })
@@ -167,34 +172,42 @@ router.get("/active-job", async (req: Request, res: Response) => {
         )
       );
 
-    // Calculate time allocation based on customer price and team size
+    // Calculate time allocation based on customer settings
     let allottedMinutes = 90; // Default 90 minutes
     
-    // Get the expected time from price tiers based on customer price
-    const priceTier = await db
-      .select({
-        allottedMinutes: timeAllocationTiers.allottedMinutes
-      })
-      .from(timeAllocationTiers)
-      .where(
-        and(
-          sql`${timeAllocationTiers.priceMin} <= ${job.customerPrice}`,
-          sql`${timeAllocationTiers.priceMax} >= ${job.customerPrice}`
+    // Check for Friends & Family override first
+    if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+      allottedMinutes = job.friendsFamilyMinutes;
+    } else {
+      // Get the expected time from price tiers based on customer price
+      const priceTier = await db
+        .select({
+          allottedMinutes: timeAllocationTiers.allottedMinutes
+        })
+        .from(timeAllocationTiers)
+        .where(
+          and(
+            sql`${timeAllocationTiers.priceMin} <= ${job.customerPrice}`,
+            sql`${timeAllocationTiers.priceMax} >= ${job.customerPrice}`
+          )
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (priceTier.length > 0) {
-      allottedMinutes = priceTier[0].allottedMinutes;
+      if (priceTier.length > 0) {
+        allottedMinutes = priceTier[0].allottedMinutes;
+      }
     }
 
-    // Adjust time based on team size (2 is default)
+    // Adjust time based on team size (2 is the standard)
     const teamSize = members.length;
     if (teamSize === 1) {
       allottedMinutes = allottedMinutes * 2; // Solo: double the time
     } else if (teamSize > 2) {
+      // For 3+ people, reduce the time proportionally
+      // Example: 3 people = 2/3 of the time, 4 people = 1/2 of the time
       allottedMinutes = Math.round(allottedMinutes * (2 / teamSize));
     }
+    // For 2 people, keep the standard time allocation (price tiers are designed for 2 people)
 
     // Format team members
     const formattedMembers = members.map(member => ({
@@ -394,38 +407,29 @@ router.get("/teams/:teamId/members", async (req: Request, res: Response) => {
     const teamId = parseInt(req.params.teamId);
     const userId = req.user!.id;
 
-    // Verify user belongs to the team
-    const teamMembership = await db
-      .select()
-      .from(teamsUsers)
-      .where(
-        and(
-          eq(teamsUsers.userId, userId),
-          eq(teamsUsers.teamId, teamId)
-        )
-      )
-      .limit(1);
+    // Verify user belongs to the team (check current membership)
+    const userTeams = await getCurrentUserTeams(userId);
+    const isUserInTeam = userTeams.some(team => team.teamId === teamId);
 
-    if (teamMembership.length === 0) {
+    if (!isUserInTeam) {
       return res.status(403).json({
         success: false,
-        error: "You are not a member of this team"
+        error: "You are not a current member of this team"
       });
     }
 
-    // Get all team members
-    const teamMembers = await db
-      .select({
-        id: users.id,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        teamId: teamsUsers.teamId
-      })
-      .from(teamsUsers)
-      .innerJoin(users, eq(teamsUsers.userId, users.id))
-      .where(eq(teamsUsers.teamId, teamId));
+    // Get current team members (active as of today)
+    const teamMembers = await getCurrentTeamMembers(teamId);
 
-    res.json({ success: true, data: teamMembers });
+    // Format the response to match the expected structure
+    const formattedMembers = teamMembers.map(member => ({
+      id: member.userId,
+      firstName: member.firstName,
+      lastName: member.lastName,
+      teamId: member.teamId
+    }));
+
+    res.json({ success: true, data: formattedMembers });
   } catch (error) {
     console.error("Error fetching team members:", error);
     res.status(500).json({ success: false, error: "Failed to fetch team members" });
@@ -544,25 +548,46 @@ router.get("/teams/other-members", async (req: Request, res: Response) => {
     const selectedTeamId = parseInt(teamId as string);
     console.log("✅ Selected team ID:", selectedTeamId);
 
-    // Get all staff members who are not in the selected team (including unassigned staff)
-    const otherTeamMembers = await db
+    // Get all active staff members who are not currently in the selected team
+    const today = new Date().toISOString().split('T')[0];
+    
+    // First, get all active staff
+    const allActiveStaff = await db
       .select({
         id: users.id,
         firstName: users.firstName,
-        lastName: users.lastName,
-        teamId: teamsUsers.teamId
+        lastName: users.lastName
       })
       .from(users)
-      .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
       .where(
         and(
           eq(users.role, "staff"),
+          eq(users.active, true)
+        )
+      );
+    
+    // Get current team members for the selected team
+    const currentTeamMembers = await db
+      .select({
+        userId: teamsUsers.userId
+      })
+      .from(teamsUsers)
+      .where(
+        and(
+          eq(teamsUsers.teamId, selectedTeamId),
+          lte(teamsUsers.startDate, today),
           or(
-            sql`${teamsUsers.teamId} IS NULL`,
-            sql`${teamsUsers.teamId} != ${selectedTeamId}`
+            isNull(teamsUsers.endDate),
+            gte(teamsUsers.endDate, today)
           )
         )
       );
+    
+    // Filter out current team members
+    const currentTeamMemberIds = currentTeamMembers.map(m => m.userId);
+    const otherTeamMembers = allActiveStaff.filter(staff => 
+      !currentTeamMemberIds.includes(staff.id)
+    );
 
     console.log("📋 Found other team members:", otherTeamMembers.length);
     res.json({ success: true, data: otherTeamMembers });
