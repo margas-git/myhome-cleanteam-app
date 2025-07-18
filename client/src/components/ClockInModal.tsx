@@ -288,6 +288,30 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
     return '';
   };
 
+  // Calculate adjusted completion time based on number of selected team members
+  const calculateAdjustedCompletionTime = () => {
+    if (!allottedMinutes) return null;
+    
+    const selectedCount = selectedMembers.length;
+    let adjustedMinutes = allottedMinutes;
+    
+    // Adjust time based on team size (same logic as backend)
+    if (selectedCount === 1) {
+      adjustedMinutes = allottedMinutes * 2; // Solo: double the time
+    } else if (selectedCount > 2) {
+      adjustedMinutes = Math.round(allottedMinutes * (2 / selectedCount));
+    }
+    // For 2 people, use the default time
+    
+    const now = new Date();
+    const completionTime = new Date(now.getTime() + adjustedMinutes * 60000);
+    return completionTime.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -324,16 +348,13 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
                     {allottedMinutes && (
                       <div className="text-xs text-blue-600 mt-1">
                         Target completion time: <span className="font-semibold">
-                          {(() => {
-                            const now = new Date();
-                            const completionTime = new Date(now.getTime() + allottedMinutes * 60000);
-                            return completionTime.toLocaleTimeString('en-US', { 
-                              hour: 'numeric', 
-                              minute: '2-digit',
-                              hour12: true 
-                            });
-                          })()}
+                          {calculateAdjustedCompletionTime()}
                         </span>
+                        {selectedMembers.length !== 2 && (
+                          <span className="text-xs text-gray-500 ml-1">
+                            ({selectedMembers.length} {selectedMembers.length === 1 ? 'person' : 'people'})
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

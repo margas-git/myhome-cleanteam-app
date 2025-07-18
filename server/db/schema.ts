@@ -75,6 +75,10 @@ export const jobs = pgTable("jobs", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").references(() => customers.id, { onDelete: "restrict" }),
   teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }),
+  price: integer("price"), // Job-specific price (nullable, defaults to customer price)
+  customerName: varchar("customer_name", { length: 255 }), // Visual reference only
+  teamMembersAtCreation: json("team_members_at_creation"), // Core team members at job creation
+  additionalStaff: json("additional_staff"), // Additional staff who worked on job
   status: jobStatusEnum("status").default("scheduled").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
@@ -87,7 +91,8 @@ export const timeEntries = pgTable("time_entries", {
   clockOutTime: timestamp("clock_out_time", { withTimezone: true }),
   lunchBreak: boolean("lunch_break").default(false),
   geofenceOverride: boolean("geofence_override").default(false),
-  autoLunchDeducted: boolean("auto_lunch_deducted").default(false)
+  autoLunchDeducted: boolean("auto_lunch_deducted").default(false),
+  staff: varchar("staff", { length: 255 }) // Visual reference only
 });
 
 export const settings = pgTable("settings", {

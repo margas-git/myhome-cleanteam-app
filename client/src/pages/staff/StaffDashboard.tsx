@@ -17,6 +17,8 @@ interface Customer {
   longitude: string;
   phone?: string;
   price: string;
+  isFriendsFamily?: boolean;
+  friendsFamilyMinutes?: number;
 }
 
 interface ActiveJob {
@@ -268,11 +270,20 @@ export function StaffDashboard() {
   };
 
   // Get allotted minutes based on price and fetched tiers
-  const getAllottedMinutes = (price: number | string | undefined) => {
-    if (!price || priceTiers.length === 0) {
+  const getAllottedMinutes = (customer: Customer | null) => {
+    if (!customer) return undefined;
+    
+    // Check for Friends & Family override first
+    if (customer.isFriendsFamily && customer.friendsFamilyMinutes) {
+      return customer.friendsFamilyMinutes;
+    }
+    
+    // Fall back to price tier calculation
+    if (!customer.price || priceTiers.length === 0) {
       return undefined;
     }
-    const priceNum = typeof price === 'string' ? parseFloat(price) : price;
+    
+    const priceNum = typeof customer.price === 'string' ? parseFloat(customer.price) : customer.price;
     const tier = priceTiers.find(t => {
       const minPrice = typeof t.priceMin === 'string' ? parseFloat(t.priceMin) : t.priceMin;
       const maxPrice = typeof t.priceMax === 'string' ? parseFloat(t.priceMax) : t.priceMax;
@@ -971,7 +982,7 @@ export function StaffDashboard() {
         isOpen={showClockInModal}
         onClose={() => setShowClockInModal(false)}
         onSuccess={handleClockInSuccess}
-        allottedMinutes={selectedCustomer ? getAllottedMinutes(selectedCustomer.price) : undefined}
+        allottedMinutes={selectedCustomer ? getAllottedMinutes(selectedCustomer) : undefined}
         preloadedTeams={preloadedTeams}
         preloadedTeamMembers={preloadedTeamMembers}
         preloadedOtherTeamMembers={preloadedOtherTeamMembers}

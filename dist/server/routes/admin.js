@@ -3,6 +3,7 @@ import { db } from "../db/connection.js";
 import { users, teams, customers, timeEntries, jobs, teamsUsers, settings, lunchBreakOverrides, timeAllocationTiers } from "../db/schema.js";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { addUserToTeam, removeUserFromTeam, getTeamMembersAtDate, getUserTeamsAtDate, getCurrentUserTeams } from "../utils/teamUtils.js";
 const router = Router();
 // Admin middleware - check if user has admin/manager role
 const adminMiddleware = (req, res, next) => {
@@ -113,6 +114,26 @@ router.post("/customers", async (req, res) => {
             return res.status(400).json({
                 success: false,
                 error: "Name and address are required"
+            });
+        }
+        // Check for existing customer with same name and address
+        const existingCustomer = await db
+            .select()
+            .from(customers)
+            .where(and(eq(customers.name, name), eq(customers.address, address)))
+            .limit(1);
+        if (existingCustomer.length > 0) {
+            const customer = existingCustomer[0];
+            const status = customer.active ? "active" : "archived";
+            return res.status(409).json({
+                success: false,
+                error: `Customer already exists with status: ${status}`,
+                existingCustomer: {
+                    id: customer.id,
+                    name: customer.name,
+                    address: customer.address,
+                    active: customer.active
+                }
             });
         }
         // Use provided coordinates or default to Melbourne
@@ -609,84 +630,101 @@ router.get("/teams/:id", async (req, res) => {
         res.status(500).json({ success: false, error: "Failed to fetch team" });
     }
 });
-// Add staff to team
+// Add staff to team (TEMPORAL VERSION)
 router.post("/teams/:id/members", async (req, res) => {
     try {
         const teamId = parseInt(req.params.id);
-        const { userId } = req.body;
+        const { userId, startDate } = req.body;
         if (!userId) {
             return res.status(400).json({
                 success: false,
                 error: "User ID is required"
             });
         }
-        // Check if user is already a member of any team
-        const existingTeamMembership = await db
-            .select({
-            teamId: teamsUsers.teamId,
-            teamName: teams.name
-        })
-            .from(teamsUsers)
-            .innerJoin(teams, eq(teamsUsers.teamId, teams.id))
-            .where(eq(teamsUsers.userId, userId))
-            .limit(1);
-        if (existingTeamMembership.length > 0) {
-            const existingTeam = existingTeamMembership[0];
-            return res.status(400).json({
-                success: false,
-                error: `User is already a member of team "${existingTeam.teamName}". Staff can only be assigned to one team at a time.`
-            });
-        }
-        // Check if assignment already exists for this specific team
-        const existing = await db
-            .select()
-            .from(teamsUsers)
-            .where(and(eq(teamsUsers.teamId, teamId), eq(teamsUsers.userId, userId)))
-            .limit(1);
-        if (existing.length > 0) {
-            return res.status(400).json({
-                success: false,
-                error: "User is already a member of this team"
-            });
-        }
-        await db
-            .insert(teamsUsers)
-            .values({
-            teamId,
-            userId
+        // Use the temporal utility function
+        const startDateObj = startDate ? new Date(startDate) : new Date();
+        await addUserToTeam(userId, teamId, startDateObj);
+        res.json({
+            success: true,
+            data: {
+                message: "User added to team successfully",
+                startDate: startDateObj.toISOString().split('T')[0]
+            }
         });
-        res.json({ success: true, data: { message: "User added to team successfully" } });
     }
     catch (error) {
         console.error("Error adding user to team:", error);
         res.status(500).json({ success: false, error: "Failed to add user to team" });
     }
 });
-// Remove staff from team
+// Remove staff from team (TEMPORAL VERSION)
 router.delete("/teams/:id/members/:userId", async (req, res) => {
     try {
         const teamId = parseInt(req.params.id);
         const userId = parseInt(req.params.userId);
-        // Check if assignment exists
-        const existing = await db
-            .select()
-            .from(teamsUsers)
-            .where(and(eq(teamsUsers.teamId, teamId), eq(teamsUsers.userId, userId)))
-            .limit(1);
-        if (existing.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: "User is not a member of this team"
-            });
-        }
-        await db
-            .delete(teamsUsers)
-            .where(and(eq(teamsUsers.teamId, teamId), eq(teamsUsers.userId, userId)));
-        res.json({ success: true, data: { message: "User removed from team successfully" } });
+        const { endDate } = req.body; // Optional end date
+        // Use the temporal utility function
+        const endDateObj = endDate ? new Date(endDate) : new Date();
+        await removeUserFromTeam(userId, teamId, endDateObj);
+        res.json({
+            success: true,
+            data: {
+                message: "User removed from team successfully",
+                endDate: endDateObj.toISOString().split('T')[0]
+            }
+        });
     }
     catch (error) {
         console.error("Error removing user from team:", error);
         res.status(500).json({ success: false, error: "Failed to remove user from team" });
+    }
+});
+// Get team members at a specific date
+router.get("/teams/:id/members/:date", async (req, res) => {
+    try {
+        const teamId = parseInt(req.params.id);
+        const date = new Date(req.params.date);
+        const members = await getTeamMembersAtDate(teamId, date);
+        res.json({
+            success: true,
+            data: {
+                teamId,
+                date: req.params.date,
+                members
+            }
+        });
+    }
+    catch (error) {
+        console.error("Error fetching team members:", error);
+        res.status(500).json({ success: false, error: "Failed to fetch team members" });
+    }
+});
+// Get user's team history
+router.get("/users/:userId/teams", async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId);
+        const { date } = req.query;
+        let userTeams;
+        if (date) {
+            // Get teams at specific date
+            userTeams = await getUserTeamsAtDate(userId, new Date(date));
+        }
+        else {
+            // Get current teams
+            userTeams = await getCurrentUserTeams(userId);
+        }
+        res.json({
+            success: true,
+            data: {
+                userId,
+                date: date || 'current',
+                teams: userTeams
+            }
+        });
+    }
+    catch (error) {
+        console.error("Error fetching user teams:", error);
+        res.status(500).json({ success: false, error: "Failed to fetch user teams" });
     }
 });
 // === DASHBOARD DATA ===
@@ -707,41 +745,42 @@ router.get("/cleans/completed", async (req, res) => {
             isFriendsFamily: customers.isFriendsFamily,
             friendsFamilyMinutes: customers.friendsFamilyMinutes,
             clockInTime: sql `MIN(${timeEntries.clockInTime})`,
-            clockOutTime: sql `MAX(${timeEntries.clockOutTime})`
+            clockOutTime: sql `MAX(${timeEntries.clockOutTime})`,
+            teamMembersAtCreation: jobs.teamMembersAtCreation,
+            additionalStaff: jobs.additionalStaff
         })
             .from(jobs)
             .innerJoin(customers, eq(jobs.customerId, customers.id))
             .leftJoin(teams, eq(jobs.teamId, teams.id))
             .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
             .where(sql `${timeEntries.clockOutTime} IS NOT NULL`)
-            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes)
+            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes, jobs.teamMembersAtCreation, jobs.additionalStaff)
             .having(sql `COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`)
-            .orderBy(sql `MAX(${timeEntries.clockOutTime}) DESC`)
-            .limit(50);
+            .orderBy(sql `MAX(${timeEntries.clockOutTime}) DESC`);
         // Fetch staff pay rate from settings
         const payRateRow = await db
             .select()
             .from(settings)
             .where(eq(settings.key, "staff_pay_rate_per_hour"))
             .limit(1);
-        const staffPayRatePerHour = Number(payRateRow[0]?.value ?? 32.31); // Default to $32.31/hour if not set
+        const staffPayRatePerHour = Number(payRateRow[0]?.value ?? 32.31);
         // For each job, get all team members who worked on it and calculate efficiency
         const completedCleansWithMembers = await Promise.all(completedJobs.map(async (job, idx) => {
-            const members = await db
+            // Parse the team members from the new fields
+            const coreTeamMembers = parseMaybeJson(job.teamMembersAtCreation);
+            const additionalStaffMembers = parseMaybeJson(job.additionalStaff);
+            // Get all time entries for this job to calculate efficiency
+            const timeEntriesForJob = await db
                 .select({
                 id: timeEntries.id,
                 userId: timeEntries.userId,
                 firstName: users.firstName,
                 lastName: users.lastName,
                 clockInTime: timeEntries.clockInTime,
-                clockOutTime: timeEntries.clockOutTime,
-                teamName: teams.name,
-                teamColor: teams.colorHex
+                clockOutTime: timeEntries.clockOutTime
             })
                 .from(timeEntries)
                 .innerJoin(users, eq(timeEntries.userId, users.id))
-                .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
-                .leftJoin(teams, eq(teamsUsers.teamId, teams.id))
                 .where(eq(timeEntries.jobId, job.jobId));
             // Calculate efficiency and wage ratio for this job
             let efficiency = 100; // Default to 100%
@@ -751,73 +790,87 @@ router.get("/cleans/completed", async (req, res) => {
             if (job.isFriendsFamily) {
                 wageRatio = 0; // Always hide wage ratio for Friends & Family
             }
-            else if (members.length > 0) {
+            else if (timeEntriesForJob.length > 0) {
                 // Calculate actual time as job duration (not sum of individual hours)
-                const clockInTimes = members
+                const clockInTimes = timeEntriesForJob
                     .map(m => m.clockInTime ? new Date(m.clockInTime).getTime() : null)
                     .filter(t => t !== null);
-                const clockOutTimes = members
+                const clockOutTimes = timeEntriesForJob
                     .map(m => m.clockOutTime ? new Date(m.clockOutTime).getTime() : null)
                     .filter(t => t !== null);
                 if (clockInTimes.length > 0 && clockOutTimes.length > 0) {
                     const earliestStart = Math.min(...clockInTimes);
                     const latestEnd = Math.max(...clockOutTimes);
-                    const actualJobDuration = (latestEnd - earliestStart) / (1000 * 60 * 60); // Convert to hours
-                    if (actualJobDuration > 0) {
-                        let expectedTime = 1.5; // Default 1.5 hours (90 minutes) if no tier found
-                        if (job.isFriendsFamily && job.friendsFamilyMinutes) {
-                            // Use friends & family allocated minutes
-                            expectedTime = job.friendsFamilyMinutes / 60; // Convert minutes to hours
-                            allocatedMinutes = job.friendsFamilyMinutes;
+                    const actualJobDuration = (latestEnd - earliestStart) / (1000 * 60 * 60);
+                    // Calculate expected time based on price tiers
+                    let expectedTime = 1.5; // Default 1.5 hours (90 minutes)
+                    if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+                        expectedTime = job.friendsFamilyMinutes / 60; // Use friends & family minutes
+                    }
+                    else {
+                        // Get the expected time from price tiers based on customer price
+                        const priceTier = await db
+                            .select({
+                            allottedMinutes: timeAllocationTiers.allottedMinutes
+                        })
+                            .from(timeAllocationTiers)
+                            .where(and(sql `${timeAllocationTiers.priceMin} <= ${job.price}`, sql `${timeAllocationTiers.priceMax} >= ${job.price}`))
+                            .limit(1);
+                        if (priceTier.length > 0) {
+                            expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
                         }
-                        else {
-                            // Get the expected time from price tiers based on customer price
-                            const priceTier = await db
-                                .select({
-                                allottedMinutes: timeAllocationTiers.allottedMinutes
-                            })
-                                .from(timeAllocationTiers)
-                                .where(and(sql `${timeAllocationTiers.priceMin} <= ${job.price}`, sql `${timeAllocationTiers.priceMax} >= ${job.price}`))
-                                .limit(1);
-                            if (priceTier.length > 0) {
-                                expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
-                                allocatedMinutes = priceTier[0].allottedMinutes;
+                    }
+                    // Calculate efficiency for this job
+                    efficiency = Math.max(Math.round((expectedTime / actualJobDuration) * 100), 0);
+                    allocatedMinutes = Math.round(expectedTime * 60);
+                    timeDifferenceMinutes = Math.round((actualJobDuration - expectedTime) * 60);
+                    // Only clamp to 0, allow >100%
+                    // Calculate wage ratio for this job (only for non-Friends & Family)
+                    if (!job.isFriendsFamily) {
+                        const totalWages = timeEntriesForJob.reduce((sum, member) => {
+                            if (member.clockInTime && member.clockOutTime) {
+                                const duration = (new Date(member.clockOutTime).getTime() - new Date(member.clockInTime).getTime()) / (1000 * 60 * 60);
+                                return sum + (duration * staffPayRatePerHour);
                             }
-                        }
-                        // Calculate time difference in minutes
-                        const actualMinutes = actualJobDuration * 60;
-                        timeDifferenceMinutes = Math.round(actualMinutes - allocatedMinutes);
-                        efficiency = (expectedTime / actualJobDuration) * 100;
-                        efficiency = Math.max(Math.round(efficiency), 0); // Only clamp to 0, allow >100%
-                        // Calculate wage ratio for this job (only for non-Friends & Family)
-                        if (!job.isFriendsFamily) {
-                            const totalWages = members.reduce((sum, member) => {
-                                if (member.clockInTime && member.clockOutTime) {
-                                    const duration = (new Date(member.clockOutTime).getTime() - new Date(member.clockInTime).getTime()) / (1000 * 60 * 60);
-                                    return sum + (duration * staffPayRatePerHour);
-                                }
-                                return sum;
-                            }, 0);
-                            wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
-                        }
+                            return sum;
+                        }, 0);
+                        wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
                     }
                 }
             }
+            // Map string arrays to objects with name properties
+            const coreTeamMembersNormalized = coreTeamMembers.map((member) => typeof member === 'string' ? { name: member } : member);
+            const additionalStaffMembersNormalized = additionalStaffMembers.map((member) => typeof member === 'string' ? { name: member } : member);
+            // Combine core team members and additional staff for display
+            const allMembers = [
+                ...coreTeamMembersNormalized.map((member) => ({
+                    id: member.id || Math.random(),
+                    userId: member.userId || Math.random(),
+                    name: member.name,
+                    clockInTime: member.clockInTime || null,
+                    clockOutTime: member.clockOutTime || null,
+                    teamName: job.teamName,
+                    teamColor: job.teamColor,
+                    isCoreTeam: true
+                })),
+                ...additionalStaffMembersNormalized.map((member) => ({
+                    id: member.id || Math.random(),
+                    userId: member.userId || Math.random(),
+                    name: member.name,
+                    clockInTime: member.clockInTime || null,
+                    clockOutTime: member.clockOutTime || null,
+                    teamName: member.teamName || 'Additional Staff',
+                    teamColor: member.teamColor || '#888',
+                    isCoreTeam: false
+                }))
+            ];
             return {
                 ...job,
                 efficiency,
                 allocatedMinutes,
                 timeDifferenceMinutes,
                 wageRatio,
-                members: members.map(member => ({
-                    id: member.id,
-                    userId: member.userId,
-                    name: `${member.firstName} ${member.lastName}`,
-                    clockInTime: member.clockInTime,
-                    clockOutTime: member.clockOutTime,
-                    teamName: member.teamName,
-                    teamColor: member.teamColor
-                }))
+                members: allMembers
             };
         }));
         res.json({ success: true, data: completedCleansWithMembers });
@@ -874,7 +927,9 @@ router.get("/cleans/active", async (req, res) => {
                 .innerJoin(users, eq(timeEntries.userId, users.id))
                 .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
                 .leftJoin(teams, eq(teamsUsers.teamId, teams.id))
-                .where(and(eq(timeEntries.jobId, job.jobId), sql `${timeEntries.clockOutTime} IS NULL`));
+                .where(and(eq(timeEntries.jobId, job.jobId), sql `${timeEntries.clockOutTime} IS NULL`, 
+            // Only get current active team memberships
+            sql `${teamsUsers.startDate} <= CURRENT_DATE`, sql `(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`, eq(teams.active, true)));
             return {
                 ...job,
                 members: members.map(member => ({
@@ -974,31 +1029,24 @@ router.post("/cleans/end-active", async (req, res) => {
                 .returning();
             updatedEntries.push(updatedEntry);
         }
-        // Check if the job is fully completed (all team members have clocked out)
-        const remainingActiveEntries = await db
-            .select({ count: sql `COUNT(*)` })
-            .from(timeEntries)
-            .where(and(eq(timeEntries.jobId, jobId), sql `${timeEntries.clockOutTime} IS NULL`));
-        // If no active entries remain, the job is fully completed
-        if (remainingActiveEntries[0].count === 0) {
-            console.log(`Job ${jobId} is fully completed (admin), calculating customer metrics...`);
-            // Update the job status to 'completed'
-            await db.update(jobs)
-                .set({ status: 'completed' })
-                .where(eq(jobs.id, jobId));
-            // Get the customer ID for this job
-            const jobInfo = await db
-                .select({ customerId: jobs.customerId })
-                .from(jobs)
-                .where(eq(jobs.id, jobId))
-                .limit(1);
-            if (jobInfo.length > 0 && jobInfo[0].customerId) {
-                const customerId = jobInfo[0].customerId;
-                // Calculate metrics for this customer in the background (don't wait for it)
-                calculateCustomerMetrics(customerId).catch(error => {
-                    console.error(`Background metrics calculation failed for customer ${customerId}:`, error);
-                });
-            }
+        // Since we clocked out ALL active entries for this job, it's definitely completed
+        console.log(`Job ${jobId} is fully completed (admin), calculating customer metrics...`);
+        // Update the job status to 'completed'
+        await db.update(jobs)
+            .set({ status: 'completed' })
+            .where(eq(jobs.id, jobId));
+        // Get the customer ID for this job
+        const jobInfo = await db
+            .select({ customerId: jobs.customerId })
+            .from(jobs)
+            .where(eq(jobs.id, jobId))
+            .limit(1);
+        if (jobInfo.length > 0 && jobInfo[0].customerId) {
+            const customerId = jobInfo[0].customerId;
+            // Calculate metrics for this customer in the background (don't wait for it)
+            calculateCustomerMetrics(customerId).catch(error => {
+                console.error(`Background metrics calculation failed for customer ${customerId}:`, error);
+            });
         }
         res.json({
             success: true,
@@ -1282,6 +1330,7 @@ router.get("/reports/timesheets", async (req, res) => {
         const weekFilter = req.query.weekFilter || 'thisWeek';
         // Calculate date range based on week filter
         const now = new Date();
+        // Use local time to match frontend and time entry data
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
         let startOfWeek;
@@ -1291,9 +1340,20 @@ router.get("/reports/timesheets", async (req, res) => {
         }
         else {
             // This week: go back to Monday of current week
-            startOfWeek = new Date(today.getTime() - dayOfWeek * 24 * 60 * 60 * 1000);
+            // If today is Sunday (0), we go back 6 days to get to Monday
+            // If today is Monday (1), we go back 0 days
+            // If today is Tuesday (2), we go back 1 day, etc.
+            const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            startOfWeek = new Date(today.getTime() - daysToSubtract * 24 * 60 * 60 * 1000);
         }
-        const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days after start (Monday to next Monday, includes all of Sunday)
+        // Debug logging
+        console.log('Timesheet Debug Info:');
+        console.log('Today:', today.toISOString());
+        console.log('Day of week:', dayOfWeek);
+        console.log('Week filter:', weekFilter);
+        console.log('Start of week:', startOfWeek.toISOString());
+        console.log('End of week:', endOfWeek.toISOString());
         // Get all time entries for the week
         // For debugging, if no entries found in current week, get all entries from the last 30 days
         let weekTimeEntries = await db
@@ -1309,6 +1369,10 @@ router.get("/reports/timesheets", async (req, res) => {
             .from(timeEntries)
             .innerJoin(users, eq(timeEntries.userId, users.id))
             .where(and(sql `${timeEntries.clockInTime} >= ${startOfWeek.toISOString()}`, sql `${timeEntries.clockInTime} < ${endOfWeek.toISOString()}`));
+        console.log('Time entries found for week:', weekTimeEntries.length);
+        if (weekTimeEntries.length > 0) {
+            console.log('Sample time entry:', weekTimeEntries[0]);
+        }
         // If no entries found for current week, get recent entries for testing
         if (weekTimeEntries.length === 0) {
             const thirtyDaysAgo = new Date();
@@ -1505,10 +1569,6 @@ router.get("/reports/timesheets", async (req, res) => {
                         lunchBreakApplied = true;
                     }
                 }
-            }
-            // Skip weekends (Saturday = 6, Sunday = 0)
-            if (dayOfWeek === 0 || dayOfWeek === 6) {
-                return;
             }
             // Map day of week to our structure (0 = Sunday, 1 = Monday, etc.)
             const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -2272,3 +2332,19 @@ router.put("/settings/payroll", async (req, res) => {
     }
 });
 export default router;
+// Helper to safely parse JSON or return array/object as-is
+function parseMaybeJson(val) {
+    if (!val)
+        return [];
+    if (typeof val === 'string') {
+        try {
+            return JSON.parse(val);
+        }
+        catch {
+            return [];
+        }
+    }
+    if (Array.isArray(val))
+        return val;
+    return [];
+}

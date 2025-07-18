@@ -145,6 +145,33 @@ router.post("/customers", async (req: Request, res: Response) => {
       });
     }
 
+    // Check for existing customer with same name and address
+    const existingCustomer = await db
+      .select()
+      .from(customers)
+      .where(
+        and(
+          eq(customers.name, name),
+          eq(customers.address, address)
+        )
+      )
+      .limit(1);
+
+    if (existingCustomer.length > 0) {
+      const customer = existingCustomer[0];
+      const status = customer.active ? "active" : "archived";
+      return res.status(409).json({
+        success: false,
+        error: `Customer already exists with status: ${status}`,
+        existingCustomer: {
+          id: customer.id,
+          name: customer.name,
+          address: customer.address,
+          active: customer.active
+        }
+      });
+    }
+
     // Use provided coordinates or default to Melbourne
     const customerLatitude = latitude || "-37.8136";
     const customerLongitude = longitude || "144.9631";
@@ -813,17 +840,18 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
         isFriendsFamily: customers.isFriendsFamily,
         friendsFamilyMinutes: customers.friendsFamilyMinutes,
         clockInTime: sql<string>`MIN(${timeEntries.clockInTime})`,
-        clockOutTime: sql<string>`MAX(${timeEntries.clockOutTime})`
+        clockOutTime: sql<string>`MAX(${timeEntries.clockOutTime})`,
+        teamMembersAtCreation: jobs.teamMembersAtCreation,
+        additionalStaff: jobs.additionalStaff
       })
       .from(jobs)
       .innerJoin(customers, eq(jobs.customerId, customers.id))
       .leftJoin(teams, eq(jobs.teamId, teams.id))
       .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
       .where(sql`${timeEntries.clockOutTime} IS NOT NULL`)
-      .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes)
+      .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes, jobs.teamMembersAtCreation, jobs.additionalStaff)
       .having(sql`COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`)
-      .orderBy(sql`MAX(${timeEntries.clockOutTime}) DESC`)
-      .limit(50);
+      .orderBy(sql`MAX(${timeEntries.clockOutTime}) DESC`);
 
     // Fetch staff pay rate from settings
     const payRateRow = await db
@@ -832,35 +860,28 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
       .where(eq(settings.key, "staff_pay_rate_per_hour"))
       .limit(1);
     
-    const staffPayRatePerHour = Number(payRateRow[0]?.value ?? 32.31); // Default to $32.31/hour if not set
+    const staffPayRatePerHour = Number(payRateRow[0]?.value ?? 32.31);
 
     // For each job, get all team members who worked on it and calculate efficiency
     const completedCleansWithMembers = await Promise.all(
       completedJobs.map(async (job, idx) => {
-        const members = await db
+        // Parse the team members from the new fields
+        const coreTeamMembers = parseMaybeJson(job.teamMembersAtCreation);
+        const additionalStaffMembers = parseMaybeJson(job.additionalStaff);
+        
+        // Get all time entries for this job to calculate efficiency
+        const timeEntriesForJob = await db
           .select({
             id: timeEntries.id,
             userId: timeEntries.userId,
             firstName: users.firstName,
             lastName: users.lastName,
             clockInTime: timeEntries.clockInTime,
-            clockOutTime: timeEntries.clockOutTime,
-            teamName: teams.name,
-            teamColor: teams.colorHex
+            clockOutTime: timeEntries.clockOutTime
           })
           .from(timeEntries)
           .innerJoin(users, eq(timeEntries.userId, users.id))
-          .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
-          .leftJoin(teams, eq(teamsUsers.teamId, teams.id))
-          .where(
-            and(
-              eq(timeEntries.jobId, job.jobId),
-              // Only get current active team memberships
-              sql`${teamsUsers.startDate} <= CURRENT_DATE`,
-              sql`(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`,
-              eq(teams.active, true)
-            )
-          );
+          .where(eq(timeEntries.jobId, job.jobId));
 
         // Calculate efficiency and wage ratio for this job
         let efficiency = 100; // Default to 100%
@@ -870,68 +891,96 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
         
         if (job.isFriendsFamily) {
           wageRatio = 0; // Always hide wage ratio for Friends & Family
-        } else if (members.length > 0) {
+        } else if (timeEntriesForJob.length > 0) {
           // Calculate actual time as job duration (not sum of individual hours)
-          const clockInTimes = members
+          const clockInTimes = timeEntriesForJob
             .map(m => m.clockInTime ? new Date(m.clockInTime).getTime() : null)
             .filter(t => t !== null);
-          const clockOutTimes = members
+          const clockOutTimes = timeEntriesForJob
             .map(m => m.clockOutTime ? new Date(m.clockOutTime).getTime() : null)
             .filter(t => t !== null);
           if (clockInTimes.length > 0 && clockOutTimes.length > 0) {
             const earliestStart = Math.min(...clockInTimes);
             const latestEnd = Math.max(...clockOutTimes);
-            const actualJobDuration = (latestEnd - earliestStart) / (1000 * 60 * 60); // Convert to hours
+            const actualJobDuration = (latestEnd - earliestStart) / (1000 * 60 * 60);
 
-            if (actualJobDuration > 0) {
-              let expectedTime = 1.5; // Default 1.5 hours (90 minutes) if no tier found
-              
-              if (job.isFriendsFamily && job.friendsFamilyMinutes) {
-                // Use friends & family allocated minutes
-                expectedTime = job.friendsFamilyMinutes / 60; // Convert minutes to hours
-                allocatedMinutes = job.friendsFamilyMinutes;
-              } else {
-                // Get the expected time from price tiers based on customer price
-                const priceTier = await db
-                  .select({
-                    allottedMinutes: timeAllocationTiers.allottedMinutes
-                  })
-                  .from(timeAllocationTiers)
-                  .where(
-                    and(
-                      sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
-                      sql`${timeAllocationTiers.priceMax} >= ${job.price}`
-                    )
+            // Calculate expected time based on price tiers
+            let expectedTime = 1.5; // Default 1.5 hours (90 minutes)
+            
+            if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+              expectedTime = job.friendsFamilyMinutes / 60; // Use friends & family minutes
+            } else {
+              // Get the expected time from price tiers based on customer price
+              const priceTier = await db
+                .select({
+                  allottedMinutes: timeAllocationTiers.allottedMinutes
+                })
+                .from(timeAllocationTiers)
+                .where(
+                  and(
+                    sql`${timeAllocationTiers.priceMin} <= ${job.price}`,
+                    sql`${timeAllocationTiers.priceMax} >= ${job.price}`
                   )
-                  .limit(1);
+                )
+                .limit(1);
 
-                if (priceTier.length > 0) {
-                  expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
-                  allocatedMinutes = priceTier[0].allottedMinutes;
+              if (priceTier.length > 0) {
+                expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
+              }
+            }
+
+            // Calculate efficiency for this job
+            efficiency = Math.max(Math.round((expectedTime / actualJobDuration) * 100), 0);
+            allocatedMinutes = Math.round(expectedTime * 60);
+            timeDifferenceMinutes = Math.round((actualJobDuration - expectedTime) * 60);
+            
+            // Only clamp to 0, allow >100%
+            
+            // Calculate wage ratio for this job (only for non-Friends & Family)
+            if (!job.isFriendsFamily) {
+              const totalWages = timeEntriesForJob.reduce((sum, member) => {
+                if (member.clockInTime && member.clockOutTime) {
+                  const duration = (new Date(member.clockOutTime).getTime() - new Date(member.clockInTime).getTime()) / (1000 * 60 * 60);
+                  return sum + (duration * staffPayRatePerHour);
                 }
-              }
-
-              // Calculate time difference in minutes
-              const actualMinutes = actualJobDuration * 60;
-              timeDifferenceMinutes = Math.round(actualMinutes - allocatedMinutes);
-
-              efficiency = (expectedTime / actualJobDuration) * 100;
-              efficiency = Math.max(Math.round(efficiency), 0); // Only clamp to 0, allow >100%
-              
-              // Calculate wage ratio for this job (only for non-Friends & Family)
-              if (!job.isFriendsFamily) {
-                const totalWages = members.reduce((sum, member) => {
-                  if (member.clockInTime && member.clockOutTime) {
-                    const duration = (new Date(member.clockOutTime).getTime() - new Date(member.clockInTime).getTime()) / (1000 * 60 * 60);
-                    return sum + (duration * staffPayRatePerHour);
-                  }
-                  return sum;
-                }, 0);
-                wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
-              }
+                return sum;
+              }, 0);
+              wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
             }
           }
         }
+
+        // Map string arrays to objects with name properties
+        const coreTeamMembersNormalized = coreTeamMembers.map((member: any) => 
+          typeof member === 'string' ? { name: member } : member
+        );
+        const additionalStaffMembersNormalized = additionalStaffMembers.map((member: any) => 
+          typeof member === 'string' ? { name: member } : member
+        );
+
+        // Combine core team members and additional staff for display
+        const allMembers = [
+          ...coreTeamMembersNormalized.map((member: any) => ({
+            id: member.id || Math.random(),
+            userId: member.userId || Math.random(),
+            name: member.name,
+            clockInTime: member.clockInTime || null,
+            clockOutTime: member.clockOutTime || null,
+            teamName: job.teamName,
+            teamColor: job.teamColor,
+            isCoreTeam: true
+          })),
+          ...additionalStaffMembersNormalized.map((member: any) => ({
+            id: member.id || Math.random(),
+            userId: member.userId || Math.random(),
+            name: member.name,
+            clockInTime: member.clockInTime || null,
+            clockOutTime: member.clockOutTime || null,
+            teamName: member.teamName || 'Additional Staff',
+            teamColor: member.teamColor || '#888',
+            isCoreTeam: false
+          }))
+        ];
 
         return {
           ...job,
@@ -939,15 +988,7 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
           allocatedMinutes,
           timeDifferenceMinutes,
           wageRatio,
-          members: members.map(member => ({
-            id: member.id,
-            userId: member.userId,
-            name: `${member.firstName} ${member.lastName}`,
-            clockInTime: member.clockInTime,
-            clockOutTime: member.clockOutTime,
-            teamName: member.teamName,
-            teamColor: member.teamColor
-          }))
+          members: allMembers
         };
       })
     );
@@ -2676,3 +2717,13 @@ router.put("/settings/payroll", async (req, res) => {
 });
 
 export default router; 
+
+// Helper to safely parse JSON or return array/object as-is
+function parseMaybeJson(val: any) {
+  if (!val) return [];
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch { return []; }
+  }
+  if (Array.isArray(val)) return val;
+  return [];
+}

@@ -8,6 +8,7 @@ import { CustomerManagement } from "./pages/admin/CustomerManagement";
 import { TeamManagement } from "./pages/admin/TeamManagement";
 import { Reports } from "./pages/admin/Reports";
 import Settings from "./pages/admin/Settings";
+import { InvoiceManagement } from "./pages/admin/InvoiceManagement";
 import { useAuth } from "./hooks/useAuth";
 
 function ProtectedRoute({ children, requiredRole }: { children: React.ReactNode; requiredRole?: string }) {
@@ -83,6 +84,11 @@ function App() {
       <Route path="/admin/settings">
         <ProtectedRoute requiredRole="admin">
           <Settings />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/invoices">
+        <ProtectedRoute requiredRole="admin">
+          <InvoiceManagement />
         </ProtectedRoute>
       </Route>
 
