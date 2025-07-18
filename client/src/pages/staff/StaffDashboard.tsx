@@ -8,7 +8,7 @@ import { ClockOutModal } from "../../components/ClockOutModal";
 import { AddCustomerModal } from "../../components/AddCustomerModal";
 import { formatAddress } from '../../utils/addressFormatter';
 import { formatPhoneNumber } from '../../utils/phoneFormatter';
-import { buildApiUrl, buildSSEUrl } from "../../config/api";
+import { buildApiUrl } from "../../config/api";
 
 interface Customer {
   id: number;
@@ -301,93 +301,28 @@ export function StaffDashboard() {
     }
   }, [location]);
 
-  // Set up SSE connection for real-time updates
+  // Set up polling for real-time updates (every 20 seconds)
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-
-    const connectSSE = () => {
-      try {
-        const sseUrl = buildSSEUrl("/api/staff/events");
-        console.log('🔗 Attempting SSE connection to:', sseUrl);
-        
-        eventSource = new EventSource(sseUrl, {
-          withCredentials: true
-        });
-
-        eventSource.onopen = () => {
-          console.log('✅ SSE connection established successfully');
-        };
-
-        eventSource.onmessage = (event) => {
-          console.log('📨 SSE message received:', event.data);
-          try {
-            const data = JSON.parse(event.data);
-            console.log('📋 Parsed SSE data:', data);
-            
-            switch (data.type) {
-              case 'connected':
-                console.log('✅ SSE connected for user:', data.userId);
-                break;
-              case 'heartbeat':
-                console.log('💓 SSE heartbeat received');
-                // Keep connection alive
-                break;
-              case 'job_started':
-                console.log('🚀 Job started via SSE:', data);
-                // Refresh active job data
-                fetchActiveJob();
-                fetchData();
-                break;
-              case 'job_ended':
-                console.log('🏁 Job ended via SSE:', data);
-                // Clear active job and refresh data
-                setActiveJob(null);
-                fetchData();
-                break;
-              case 'job_updated':
-                console.log('🔄 Job updated via SSE:', data);
-                console.log('📊 Current active job before update:', activeJob);
-                // Refresh active job data to get updated times
-                fetchActiveJob();
-                fetchData();
-                break;
-              default:
-                console.log('❓ Unknown SSE event:', data);
-            }
-          } catch (error) {
-            console.error('❌ Error parsing SSE event:', error);
-            console.error('Raw event data:', event.data);
-          }
-        };
-
-        eventSource.onerror = (error) => {
-          console.error('❌ SSE connection error:', error);
-          console.log('🔍 Current URL:', window.location.href);
-          console.log('🔍 SSE URL attempted:', buildSSEUrl("/api/staff/events"));
-          // Reconnect after a delay
-          setTimeout(() => {
-            if (eventSource) {
-              eventSource.close();
-              console.log('🔄 Attempting SSE reconnection...');
-              connectSSE();
-            }
-          }, 5000);
-        };
-      } catch (error) {
-        console.error('Failed to establish SSE connection:', error);
-      }
+    const pollInterval = 20000; // 20 seconds
+    
+    const pollData = () => {
+      console.log('🔄 Polling for updates...');
+      fetchActiveJob();
+      fetchData();
     };
 
-    connectSSE();
+    // Initial fetch
+    pollData();
+
+    // Set up polling interval
+    const interval = setInterval(pollData, pollInterval);
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
+      clearInterval(interval);
     };
   }, []);
 
-  // Keep polling for timer updates (every 1 second) but remove job status polling
+  // Keep polling for timer updates (every 1 second)
   useEffect(() => {
     if (activeJob) {
       const timer = window.setInterval(() => {
