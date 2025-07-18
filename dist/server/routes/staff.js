@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db } from "../db/connection.js";
 import { teams, customers, timeEntries, jobs, teamsUsers, users, settings, timeAllocationTiers } from "../db/schema.js";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, or, lte, gte, isNull } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth.js";
 import { calculateCustomerMetrics } from "./admin.js";
+import { getCurrentTeamMembers, getCurrentUserTeams } from "../utils/teamUtils.js";
 const router = Router();
 // Apply auth middleware to all routes
 router.use(authMiddleware);
@@ -51,6 +52,28 @@ router.get("/team", async (req, res) => {
         res.status(500).json({ success: false, error: "Failed to fetch team" });
     }
 });
+// Get price tiers for staff
+router.get("/price-tiers", async (req, res) => {
+    try {
+        const tiers = await db
+            .select({
+            id: timeAllocationTiers.id,
+            priceMin: timeAllocationTiers.priceMin,
+            priceMax: timeAllocationTiers.priceMax,
+            allottedMinutes: timeAllocationTiers.allottedMinutes
+        })
+            .from(timeAllocationTiers)
+            .orderBy(timeAllocationTiers.priceMin);
+        res.json({
+            success: true,
+            data: tiers
+        });
+    }
+    catch (error) {
+        console.error("Error fetching price tiers:", error);
+        res.status(500).json({ success: false, error: "Failed to fetch price tiers" });
+    }
+});
 // Get active customers
 router.get("/customers", async (req, res) => {
     try {
@@ -69,7 +92,9 @@ router.get("/customers", async (req, res) => {
             latitude: customers.latitude,
             longitude: customers.longitude,
             phone: customers.phone,
-            price: customers.price
+            price: customers.price,
+            isFriendsFamily: customers.isFriendsFamily,
+            friendsFamilyMinutes: customers.friendsFamilyMinutes
         })
             .from(customers)
             .where(eq(customers.active, true));
@@ -92,6 +117,8 @@ router.get("/active-job", async (req, res) => {
             customerName: customers.name,
             customerAddress: customers.address,
             customerPrice: customers.price,
+            isFriendsFamily: customers.isFriendsFamily,
+            friendsFamilyMinutes: customers.friendsFamilyMinutes,
             teamName: teams.name,
             teamColor: teams.colorHex
         })
@@ -118,27 +145,36 @@ router.get("/active-job", async (req, res) => {
             .from(timeEntries)
             .innerJoin(users, eq(timeEntries.userId, users.id))
             .where(and(eq(timeEntries.jobId, jobId), sql `${timeEntries.clockOutTime} IS NULL`));
-        // Calculate time allocation based on customer price and team size
+        // Calculate time allocation based on customer settings
         let allottedMinutes = 90; // Default 90 minutes
-        // Get the expected time from price tiers based on customer price
-        const priceTier = await db
-            .select({
-            allottedMinutes: timeAllocationTiers.allottedMinutes
-        })
-            .from(timeAllocationTiers)
-            .where(and(sql `${timeAllocationTiers.priceMin} <= ${job.customerPrice}`, sql `${timeAllocationTiers.priceMax} >= ${job.customerPrice}`))
-            .limit(1);
-        if (priceTier.length > 0) {
-            allottedMinutes = priceTier[0].allottedMinutes;
+        // Check for Friends & Family override first
+        if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+            allottedMinutes = job.friendsFamilyMinutes;
         }
-        // Adjust time based on team size (2 is default)
+        else {
+            // Get the expected time from price tiers based on customer price
+            const priceTier = await db
+                .select({
+                allottedMinutes: timeAllocationTiers.allottedMinutes
+            })
+                .from(timeAllocationTiers)
+                .where(and(sql `${timeAllocationTiers.priceMin} <= ${job.customerPrice}`, sql `${timeAllocationTiers.priceMax} >= ${job.customerPrice}`))
+                .limit(1);
+            if (priceTier.length > 0) {
+                allottedMinutes = priceTier[0].allottedMinutes;
+            }
+        }
+        // Adjust time based on team size (2 is the standard)
         const teamSize = members.length;
         if (teamSize === 1) {
             allottedMinutes = allottedMinutes * 2; // Solo: double the time
         }
         else if (teamSize > 2) {
+            // For 3+ people, reduce the time proportionally
+            // Example: 3 people = 2/3 of the time, 4 people = 1/2 of the time
             allottedMinutes = Math.round(allottedMinutes * (2 / teamSize));
         }
+        // For 2 people, keep the standard time allocation (price tiers are designed for 2 people)
         // Format team members
         const formattedMembers = members.map(member => ({
             id: member.id,
@@ -297,30 +333,25 @@ router.get("/teams/:teamId/members", async (req, res) => {
     try {
         const teamId = parseInt(req.params.teamId);
         const userId = req.user.id;
-        // Verify user belongs to the team
-        const teamMembership = await db
-            .select()
-            .from(teamsUsers)
-            .where(and(eq(teamsUsers.userId, userId), eq(teamsUsers.teamId, teamId)))
-            .limit(1);
-        if (teamMembership.length === 0) {
+        // Verify user belongs to the team (check current membership)
+        const userTeams = await getCurrentUserTeams(userId);
+        const isUserInTeam = userTeams.some(team => team.teamId === teamId);
+        if (!isUserInTeam) {
             return res.status(403).json({
                 success: false,
-                error: "You are not a member of this team"
+                error: "You are not a current member of this team"
             });
         }
-        // Get all team members
-        const teamMembers = await db
-            .select({
-            id: users.id,
-            firstName: users.firstName,
-            lastName: users.lastName,
-            teamId: teamsUsers.teamId
-        })
-            .from(teamsUsers)
-            .innerJoin(users, eq(teamsUsers.userId, users.id))
-            .where(eq(teamsUsers.teamId, teamId));
-        res.json({ success: true, data: teamMembers });
+        // Get current team members (active as of today)
+        const teamMembers = await getCurrentTeamMembers(teamId);
+        // Format the response to match the expected structure
+        const formattedMembers = teamMembers.map(member => ({
+            id: member.userId,
+            firstName: member.firstName,
+            lastName: member.lastName,
+            teamId: member.teamId
+        }));
+        res.json({ success: true, data: formattedMembers });
     }
     catch (error) {
         console.error("Error fetching team members:", error);
@@ -406,31 +437,39 @@ router.get("/time-entries/current", async (req, res) => {
 // Get other team members (members from other teams)
 router.get("/teams/other-members", async (req, res) => {
     try {
-        const userId = req.user.id;
-        // Get user's current team
-        const userTeam = await db
-            .select({ teamId: teamsUsers.teamId })
-            .from(teamsUsers)
-            .where(eq(teamsUsers.userId, userId))
-            .limit(1);
-        if (userTeam.length === 0) {
-            return res.status(404).json({
+        const { teamId } = req.query;
+        console.log("🔍 Other team members request - teamId:", teamId, "query:", req.query);
+        if (!teamId) {
+            console.log("❌ No teamId provided");
+            return res.status(400).json({
                 success: false,
-                error: "No team found for user"
+                error: "Team ID is required"
             });
         }
-        const currentTeamId = userTeam[0].teamId;
-        // Get all team members from other teams
-        const otherTeamMembers = await db
+        const selectedTeamId = parseInt(teamId);
+        console.log("✅ Selected team ID:", selectedTeamId);
+        // Get all active staff members who are not currently in the selected team
+        const today = new Date().toISOString().split('T')[0];
+        // First, get all active staff
+        const allActiveStaff = await db
             .select({
             id: users.id,
             firstName: users.firstName,
-            lastName: users.lastName,
-            teamId: teamsUsers.teamId
+            lastName: users.lastName
+        })
+            .from(users)
+            .where(and(eq(users.role, "staff"), eq(users.active, true)));
+        // Get current team members for the selected team
+        const currentTeamMembers = await db
+            .select({
+            userId: teamsUsers.userId
         })
             .from(teamsUsers)
-            .innerJoin(users, eq(teamsUsers.userId, users.id))
-            .where(sql `${teamsUsers.teamId} != ${currentTeamId}`);
+            .where(and(eq(teamsUsers.teamId, selectedTeamId), lte(teamsUsers.startDate, today), or(isNull(teamsUsers.endDate), gte(teamsUsers.endDate, today))));
+        // Filter out current team members
+        const currentTeamMemberIds = currentTeamMembers.map(m => m.userId);
+        const otherTeamMembers = allActiveStaff.filter(staff => !currentTeamMemberIds.includes(staff.id));
+        console.log("📋 Found other team members:", otherTeamMembers.length);
         res.json({ success: true, data: otherTeamMembers });
     }
     catch (error) {
@@ -517,12 +556,17 @@ router.post("/time-entries/clock-out", async (req, res) => {
             updatedEntries.push(updatedEntry);
         }
         // Check if the job is fully completed (all team members have clocked out)
-        const remainingActiveEntries = await db
-            .select({ count: sql `COUNT(*)` })
-            .from(timeEntries)
-            .where(and(eq(timeEntries.jobId, jobId), sql `${timeEntries.clockOutTime} IS NULL`));
-        // If no active entries remain, the job is fully completed
-        if (remainingActiveEntries[0].count === 0) {
+        // If we clocked out all members, the job is definitely completed
+        // For partial clock-outs, check if any active entries remain
+        let isJobCompleted = clockOutAllMembers;
+        if (!clockOutAllMembers) {
+            const remainingActiveEntries = await db
+                .select({ count: sql `COUNT(*)` })
+                .from(timeEntries)
+                .where(and(eq(timeEntries.jobId, jobId), sql `${timeEntries.clockOutTime} IS NULL`));
+            isJobCompleted = remainingActiveEntries[0].count === 0;
+        }
+        if (isJobCompleted) {
             console.log(`Job ${jobId} is fully completed, calculating customer metrics...`);
             // Update the job status to 'completed'
             await db.update(jobs)
@@ -548,7 +592,7 @@ router.post("/time-entries/clock-out", async (req, res) => {
             broadcastDashboardUpdate('staff_clocked_out', {
                 jobId,
                 clockedOutMembers: updatedEntries.length,
-                isJobCompleted: remainingActiveEntries[0].count === 0,
+                isJobCompleted: isJobCompleted,
                 timestamp: clockOutTime
             });
         }

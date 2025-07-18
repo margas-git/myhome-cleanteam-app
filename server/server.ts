@@ -8,6 +8,7 @@ import { existsSync, readdirSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
+import invoiceRouter from "./routes/invoices.js";
 import { authMiddleware } from "./middleware/auth.js";
 // import other route modules as they are implemented
 
@@ -34,22 +35,10 @@ export function createServer() {
       },
     }));
   }
-  // CORS configuration
-  const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam.up.railway.app";
-  
-  // Allow localhost for development
-  const allowedOrigins = [
-    corsOrigin,
-    "http://localhost:5173",
-    "http://localhost:4000",
-    "http://localhost:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:4000",
-    "http://127.0.0.1:3000"
-  ];
-  
+  // CORS configuration - allow all origins for flexibility
+  // This works with localhost, custom domains, and Railway domains
   app.use(cors({ 
-    origin: true, // Allow all origins in development
+    origin: true, // Allow all origins
     credentials: true 
   }));
   app.use(express.json());
@@ -103,6 +92,7 @@ export function createServer() {
   app.use("/api/auth", authRouter);
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
+  app.use("/api/invoices", authMiddleware, invoiceRouter);
 
   // Only serve static files in production
   if (process.env.NODE_ENV === 'production') {

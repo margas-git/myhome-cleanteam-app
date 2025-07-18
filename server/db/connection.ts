@@ -21,4 +21,5 @@ if (!connectionString) {
 const client = postgres(connectionString);
 import * as schema from "./schema.js";
 
-export const db = drizzle(client, { schema }); 
+export const db = drizzle(client, { schema });
+export { client }; 

@@ -7,7 +7,6 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, "../../.env") });
-// Debug: Log the resolved path and check if file exists
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
     console.error("DATABASE_URL environment variable is required");
@@ -18,3 +17,4 @@ if (!connectionString) {
 const client = postgres(connectionString);
 import * as schema from "./schema.js";
 export const db = drizzle(client, { schema });
+export { client };

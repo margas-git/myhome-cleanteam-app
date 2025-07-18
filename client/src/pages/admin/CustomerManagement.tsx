@@ -176,7 +176,14 @@ export function CustomerManagement() {
         fetchCustomers(); // Refresh the list
       } else {
         const error = await response.json();
-        alert(`Failed to add customer: ${error.error}`);
+        
+        // Handle duplicate customer error specifically
+        if (response.status === 409 && error.existingCustomer) {
+          const status = error.existingCustomer.active ? "active" : "archived";
+          alert(`Customer already exists!\n\nName: ${error.existingCustomer.name}\nAddress: ${error.existingCustomer.address}\nStatus: ${status}\n\nPlease check the customer list or use a different name/address.`);
+        } else {
+          alert(`Failed to add customer: ${error.error}`);
+        }
       }
     } catch (error) {
       console.error("Failed to add customer:", error);

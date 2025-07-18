@@ -8,14 +8,9 @@
     <div id="result"></div>
     
     <script>
-        // Copy the API configuration from the main app
-        const API_BASE_URL = 'https://myhome-cleanteam-api.onrender.com';
-        
+        // Use relative URLs for API calls
         const buildApiUrl = (endpoint) => {
-            if (window.location.hostname === 'localhost') {
-                return endpoint;
-            }
-            return `${API_BASE_URL}${endpoint}`;
+            return endpoint; // Always use relative URLs
         };
         
         async function testAPI() {

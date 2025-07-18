@@ -15,6 +15,13 @@
       "when": 1752240943948,
       "tag": "0001_late_maestro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1752240943948,
+      "tag": "0002_remove_unused_job_fields",
+      "breakpoints": true
     }
   ]
 }

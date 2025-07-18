@@ -1,6 +1,7 @@
-import { pgTable, serial, integer, varchar, text, timestamp, boolean, pgEnum, date, time, decimal, json, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, timestamp, boolean, pgEnum, date, decimal, json, uniqueIndex } from "drizzle-orm/pg-core";
 export const roleEnum = pgEnum("role", ["staff", "manager", "admin"]);
 export const jobStatusEnum = pgEnum("job_status", ["scheduled", "in_progress", "completed"]);
+export const invoiceStatusEnum = pgEnum("invoice_status", ["draft", "sent", "paid", "overdue", "cancelled"]);
 export const users = pgTable("users", {
     id: serial("id").primaryKey(),
     email: varchar("email", { length: 255 }).notNull().unique(),
@@ -21,7 +22,10 @@ export const teams = pgTable("teams", {
 });
 export const teamsUsers = pgTable("teams_users", {
     teamId: integer("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" })
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    startDate: date("start_date").notNull().defaultNow(),
+    endDate: date("end_date"), // NULL means currently active
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 }, (table) => {
     return {
         pk: uniqueIndex("teams_users_pk_idx").on(table.teamId, table.userId)
@@ -50,9 +54,10 @@ export const jobs = pgTable("jobs", {
     id: serial("id").primaryKey(),
     customerId: integer("customer_id").references(() => customers.id, { onDelete: "restrict" }),
     teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }),
-    scheduledDate: date("scheduled_date"),
-    startTime: time("start_time"),
-    endTime: time("end_time"),
+    price: integer("price"), // Job-specific price (nullable, defaults to customer price)
+    customerName: varchar("customer_name", { length: 255 }), // Visual reference only
+    teamMembersAtCreation: json("team_members_at_creation"), // Core team members at job creation
+    additionalStaff: json("additional_staff"), // Additional staff who worked on job
     status: jobStatusEnum("status").default("scheduled").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
@@ -64,7 +69,8 @@ export const timeEntries = pgTable("time_entries", {
     clockOutTime: timestamp("clock_out_time", { withTimezone: true }),
     lunchBreak: boolean("lunch_break").default(false),
     geofenceOverride: boolean("geofence_override").default(false),
-    autoLunchDeducted: boolean("auto_lunch_deducted").default(false)
+    autoLunchDeducted: boolean("auto_lunch_deducted").default(false),
+    staff: varchar("staff", { length: 255 }) // Visual reference only
 });
 export const settings = pgTable("settings", {
     key: varchar("key", { length: 128 }).primaryKey(),
@@ -92,4 +98,39 @@ export const lunchBreakOverrides = pgTable("lunch_break_overrides", {
     return {
         userDateUnique: uniqueIndex("lunch_break_overrides_user_date_idx").on(table.userId, table.date)
     };
+});
+export const invoices = pgTable("invoices", {
+    id: serial("id").primaryKey(),
+    invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(),
+    customerId: integer("customer_id").references(() => customers.id, { onDelete: "restrict" }).notNull(),
+    issueDate: date("issue_date").notNull(),
+    dueDate: date("due_date").notNull(),
+    status: invoiceStatusEnum("status").default("draft").notNull(),
+    subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+    taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0").notNull(),
+    totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+    notes: text("notes"),
+    paymentTerms: varchar("payment_terms", { length: 255 }).default("Net 30"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+export const invoiceItems = pgTable("invoice_items", {
+    id: serial("id").primaryKey(),
+    invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+    jobId: integer("job_id").references(() => jobs.id, { onDelete: "restrict" }).notNull(),
+    description: text("description").notNull(),
+    quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1").notNull(),
+    unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+    totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+export const invoicePayments = pgTable("invoice_payments", {
+    id: serial("id").primaryKey(),
+    invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+    amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+    paymentDate: date("payment_date").notNull(),
+    paymentMethod: varchar("payment_method", { length: 50 }),
+    reference: varchar("reference", { length: 255 }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });

@@ -1,8 +1,8 @@
 import { config } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { db } from "./db/connection";
-import { timeAllocationTiers } from "./db/schema";
+import { db } from "./db/connection.js";
+import { timeAllocationTiers } from "./db/schema.js";
 
 // Load .env from the root directory
 const __filename = fileURLToPath(import.meta.url);

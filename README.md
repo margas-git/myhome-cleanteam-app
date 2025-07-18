@@ -1,94 +1,36 @@
-# MyHome CleanTeam
+# MyHome CleanTeam – Team Membership Tracker
 
-A comprehensive cleaning service management application with admin and staff portals.
+This directory contains the workflow for tracking team membership periods based on the master spreadsheet.
 
-## Features
+## Files
 
-### Staff Portal
-- Clock in/out for jobs
-- View nearby customers and job assignments
-- Track work progress with timers
-- Manage lunch breaks
-- View completed work for the day
+- **MyHome Wages Macros.xlsm**: The master Excel file containing all team, date, and team ID data (column M).
+- **fix_overlaps_and_gaps.py**: The script to process the spreadsheet and generate a clean, non-overlapping, gap-free team membership tracker.
+- **team_id_tracker.csv**: The output CSV file with columns: `team_id`, `name`, `start_date`, `end_date`.
 
-### Admin Portal
-- Dashboard with real-time metrics (active cleans, revenue, wage ratios)
-- Customer management (add, edit, archive customers)
-- Team management (create teams, assign staff)
-- Staff directory management
-- Reports and timesheets
-- System settings (lunch breaks, geolocation radius, price tiers)
+## Usage
 
-## Tech Stack
-
-- **Frontend**: React 18 + TypeScript + Tailwind CSS + shadcn/ui + wouter
-- **Backend**: Express.js API
-- **Database**: PostgreSQL with Drizzle ORM
-- **Deployment**: Railway-ready with unified build
-- **Maps**: Google Maps integration for location services
-- **PWA**: Progressive Web App with offline support
-
-## Project Structure
-
-```
-/
-├── client/                 # React frontend
-│   ├── src/
-│   │   ├── components/    # Reusable UI components
-│   │   ├── pages/         # Page components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── config/        # Configuration files
-│   │   └── utils/         # Utility functions
-│   └── dist/              # Built frontend files
-├── server/                # Express backend
-│   ├── db/               # Database schema and connection
-│   ├── routes/           # API route handlers
-│   ├── middleware/       # Express middleware
-│   └── index.ts          # Server entry point
-├── database/             # Database migrations
-└── package.json          # Unified dependencies
-```
-
-## Getting Started
-
-1. **Install dependencies:**
+1. **Update the spreadsheet** (`MyHome Wages Macros.xlsm`) with the latest team and team ID data. Ensure column M contains the correct Team ID for each row.
+2. **Run the script:**
    ```bash
-   npm install
+   python3 fix_overlaps_and_gaps.py
    ```
+3. **Result:**
+   - The script will output `team_id_tracker.csv` in this directory.
+   - This CSV contains one row per unique team membership period, with no overlapping dates and no gaps for each team.
 
-2. **Set up environment variables:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+## Output Format
 
-3. **Set up the database:**
-   ```bash
-   npm run db:push
-   npm run seed
-   ```
+| team_id | name                              | start_date  | end_date    |
+|---------|-----------------------------------|-------------|-------------|
+| 1       | Orla Shelly & Julie Roccati       | 02/12/2024  | 04/12/2024  |
+| ...     | ...                               | ...         | ...         |
 
-4. **Start development server:**
-   ```bash
-   npm run dev
-   ```
+- **team_id**: The team identifier from column M of the spreadsheet
+- **name**: The team composition (from column B)
+- **start_date, end_date**: The inclusive date range for this team composition
 
-5. **Build for production:**
-   ```bash
-   npm run build
-   npm start
-   ```
-
-## Development
-
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:4000
-- **Database**: PostgreSQL (configure in .env)
-
-## Deployment
-
-This project is configured for Railway deployment with a unified build process.
-
-## License
-
-Private - MyHome CleanTeam
+## Notes
+- Only the files listed above are required for this workflow.
+- All other scripts and outputs have been removed for clarity and simplicity.
+- If you update the spreadsheet, simply rerun the script to regenerate the tracker.
