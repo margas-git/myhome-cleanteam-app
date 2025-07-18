@@ -48,14 +48,15 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [editingClean, setEditingClean] = useState<Clean | null>(null);
   const [saving, setSaving] = useState(false);
-  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('custom');
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('today');
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
   const [isUpdating, setIsUpdating] = useState(false);
-  const [appliedDateFilter, setAppliedDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('custom');
+  const [appliedDateFilter, setAppliedDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('today');
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
   
   // SSE connection state
   const [sseConnected, setSseConnected] = useState(false);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
   
 
 
@@ -255,6 +256,21 @@ export function AdminDashboard() {
 
   // Set up SSE for real-time updates
   useEffect(() => {
+    // Check if SSE is disabled via environment variable
+    const sseDisabled = process.env.REACT_APP_DISABLE_SSE === 'true';
+    
+    if (sseDisabled) {
+      console.log("SSE disabled, using polling fallback");
+      setSseConnected(false);
+      const pollInterval = setInterval(() => {
+        fetchDashboardData();
+      }, 30000); // Poll every 30 seconds
+      
+      return () => {
+        clearInterval(pollInterval);
+      };
+    }
+
     let eventSource: EventSource | null = null;
 
     const connectSSE = () => {
@@ -272,6 +288,7 @@ export function AdminDashboard() {
         eventSource.onopen = () => {
           console.log("SSE connection established");
           setSseConnected(true);
+          setConnectionAttempts(0); // Reset connection attempts on successful connection
         };
 
         eventSource.onmessage = (event) => {
@@ -303,13 +320,20 @@ export function AdminDashboard() {
         eventSource.onerror = (error) => {
           console.error("SSE connection error:", error);
           setSseConnected(false);
-          // Attempt to reconnect after a delay
-          setTimeout(() => {
-            if (eventSource) {
-              eventSource.close();
-              connectSSE();
-            }
-          }, 5000);
+          setConnectionAttempts(prev => prev + 1);
+          
+          // Attempt to reconnect after a delay, but limit attempts
+          if (connectionAttempts < 3) {
+            setTimeout(() => {
+              if (eventSource) {
+                eventSource.close();
+                connectSSE();
+              }
+            }, 5000);
+          } else {
+            // After 3 failed attempts, stay in polling mode
+            console.log("SSE connection failed after 3 attempts, staying in polling mode");
+          }
         };
 
       } catch (error) {
@@ -317,13 +341,18 @@ export function AdminDashboard() {
         // Fallback to polling if SSE fails
         console.log("Falling back to polling...");
         setSseConnected(false);
-        const pollInterval = setInterval(() => {
-          fetchDashboardData();
-        }, 30000); // Poll every 30 seconds as fallback
+        setConnectionAttempts(prev => prev + 1);
+        
+        // Only set up polling if we haven't exceeded connection attempts
+        if (connectionAttempts < 3) {
+          const pollInterval = setInterval(() => {
+            fetchDashboardData();
+          }, 30000); // Poll every 30 seconds as fallback
 
-        return () => {
-          clearInterval(pollInterval);
-        };
+          return () => {
+            clearInterval(pollInterval);
+          };
+        }
       }
     };
 
@@ -436,16 +465,20 @@ export function AdminDashboard() {
                 <h1 className="text-2xl font-bold text-gray-900">
                   Admin Dashboard
                 </h1>
-                {isUpdating && (
-                  <div className="flex items-center space-x-1 text-blue-600">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                    <span className="text-xs font-medium">Updating...</span>
-                  </div>
-                )}
-                <div className="flex items-center space-x-1 text-xs">
-                  <div className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
-                  <span className={`font-medium ${sseConnected ? 'text-green-600' : 'text-yellow-600'}`}>
-                    {sseConnected ? 'Real-time' : 'Polling'}
+                <div className="flex items-center space-x-1 text-xs bg-gray-50 px-2 py-1 rounded-full">
+                  <div className={`w-2 h-2 rounded-full ${
+                    isUpdating ? 'bg-blue-500 animate-pulse' : 
+                    sseConnected ? 'bg-green-500' : 
+                    'bg-yellow-500'
+                  }`}></div>
+                  <span className={`font-medium ${
+                    isUpdating ? 'text-blue-600' : 
+                    sseConnected ? 'text-green-600' : 
+                    'text-yellow-600'
+                  }`}>
+                    {isUpdating ? 'Updating...' : 
+                     sseConnected ? 'Live' : 
+                     connectionAttempts > 0 ? 'Polling' : 'Connecting...'}
                   </span>
                 </div>
               </div>
@@ -515,18 +548,6 @@ export function AdminDashboard() {
 
               </div>
             </div>
-            {(() => {
-              const { start, end } = getDateRange(appliedDateFilter);
-              
-              // Show end time as 23:59 for better readability
-              const displayEnd = new Date(end.getTime() - 1);
-              
-              return (
-                <div className="text-xs text-gray-500 mt-1">
-                  <strong>Debug:</strong> Showing data from <span>{formatUTCDateAsLocal(start)}</span> to <span>{formatUTCDateAsLocal(displayEnd)}</span>
-                </div>
-              );
-            })()}
           </div>
         </div>
           {/* Stats Overview */}
