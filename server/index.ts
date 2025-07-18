@@ -3,6 +3,7 @@ import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import express from "express";
 import { createServer } from "./server.js";
+import { startCrossServerEventProcessor } from "./utils/eventBroadcaster.js";
 
 // Load .env from the root directory
 const __filename = fileURLToPath(import.meta.url);
@@ -15,4 +16,7 @@ const app = createServer();
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+  
+  // Start cross-server event processor
+  startCrossServerEventProcessor();
 });

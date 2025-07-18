@@ -854,8 +854,7 @@ router.post("/time-entries/clock-out", async (req: Request, res: Response) => {
 
 // === SERVER-SENT EVENTS ===
 
-// Store active SSE connections
-const sseConnections = new Map<number, Response>();
+import { registerSSEConnection, unregisterSSEConnection, broadcastCrossServerEvent } from "../utils/eventBroadcaster.js";
 
 // SSE endpoint for staff events
 router.get("/events", async (req: Request, res: Response) => {
@@ -878,12 +877,12 @@ router.get("/events", async (req: Request, res: Response) => {
   // Send initial connection event
   res.write(`data: ${JSON.stringify({ type: 'connected', userId })}\n\n`);
 
-  // Store connection
-  sseConnections.set(userId, res);
+  // Register connection with cross-server broadcaster
+  registerSSEConnection(userId, res);
 
   // Handle client disconnect
   req.on('close', () => {
-    sseConnections.delete(userId);
+    unregisterSSEConnection(userId);
     console.log(`SSE connection closed for user ${userId}`);
   });
 
@@ -899,23 +898,14 @@ router.get("/events", async (req: Request, res: Response) => {
 
 // Helper function to send events to specific users
 export function sendSSEEvent(userId: number, event: any) {
-  const connection = sseConnections.get(userId);
-  if (connection && !connection.destroyed) {
-    connection.write(`data: ${JSON.stringify(event)}\n\n`);
-  }
+  // This will be handled by the cross-server broadcaster
+  broadcastCrossServerEvent(event);
 }
 
 // Helper function to send events to all connected users
 export function broadcastSSEEvent(event: any) {
-  console.log('📡 Broadcasting SSE event:', event.type, 'to', sseConnections.size, 'connections');
-  sseConnections.forEach((connection, userId) => {
-    if (!connection.destroyed) {
-      connection.write(`data: ${JSON.stringify(event)}\n\n`);
-      console.log('📤 Sent to user:', userId);
-    } else {
-      console.log('❌ Connection destroyed for user:', userId);
-    }
-  });
+  console.log('📡 Broadcasting cross-server SSE event:', event.type);
+  broadcastCrossServerEvent(event);
 }
 
 export default router; 

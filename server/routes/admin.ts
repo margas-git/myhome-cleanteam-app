@@ -1374,10 +1374,10 @@ router.put("/cleans/:jobId", async (req: Request, res: Response) => {
     }
 
     // Send SSE event to all connected staff about the job update
-    console.log('🔄 Sending SSE event for job update:', { jobId, clockInTime: clockInUTC, clockOutTime: clockOutUTC });
+    console.log('🔄 Sending cross-server SSE event for job update:', { jobId, clockInTime: clockInUTC, clockOutTime: clockOutUTC });
     try {
-      const { broadcastSSEEvent } = await import('./staff');
-      broadcastSSEEvent({
+      const { broadcastCrossServerEvent } = await import('../utils/eventBroadcaster.js');
+      await broadcastCrossServerEvent({
         type: 'job_updated',
         jobId,
         clockInTime: clockInUTC,
@@ -1385,9 +1385,9 @@ router.put("/cleans/:jobId", async (req: Request, res: Response) => {
         updatedEntries: updatedEntries.length,
         timestamp: new Date()
       });
-      console.log('✅ SSE event sent successfully');
+      console.log('✅ Cross-server SSE event sent successfully');
     } catch (error) {
-      console.error('❌ Failed to send SSE event for job update:', error);
+      console.error('❌ Failed to send cross-server SSE event for job update:', error);
     }
 
     res.json({ 

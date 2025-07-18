@@ -11,7 +11,8 @@ import {
   time,
   decimal,
   json,
-  uniqueIndex
+  uniqueIndex,
+  jsonb
 } from "drizzle-orm/pg-core";
 
 export const roleEnum = pgEnum("role", ["staff", "manager", "admin"]);
@@ -163,4 +164,15 @@ export const invoicePayments = pgTable("invoice_payments", {
   reference: varchar("reference", { length: 255 }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+// Cross-server event broadcasting table
+export const serverEvents = pgTable('server_events', {
+  id: serial('id').primaryKey(),
+  eventType: text('event_type').notNull(),
+  eventData: jsonb('event_data').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  processed: boolean('processed').default(false),
+  processedAt: timestamp('processed_at'),
+  serverId: text('server_id'), // To avoid processing own events
 }); 
