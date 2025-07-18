@@ -33,20 +33,10 @@ export function createServer() {
             },
         }));
     }
-    // CORS configuration
-    const corsOrigin = process.env.CORS_ORIGIN || "https://myhome-cleanteam-wip.up.railway.app";
-    // Allow localhost for development
-    const allowedOrigins = [
-        corsOrigin,
-        "http://localhost:5173",
-        "http://localhost:4000",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:4000",
-        "http://127.0.0.1:3000"
-    ];
+    // CORS configuration - allow all origins for flexibility
+    // This works with localhost, custom domains, and Railway domains
     app.use(cors({
-        origin: true, // Allow all origins in development
+        origin: true, // Allow all origins
         credentials: true
     }));
     app.use(express.json());
