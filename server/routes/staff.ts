@@ -117,6 +117,59 @@ router.get("/customers", async (req: Request, res: Response) => {
   }
 });
 
+// Create new customer (staff only)
+router.post("/customers", async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const { name, address, phone, email, notes, latitude, longitude } = req.body;
+
+    // Validate required fields
+    if (!name || !address || !latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        error: "Name, address, latitude, and longitude are required"
+      });
+    }
+
+    // Create the customer
+    const [newCustomer] = await db
+      .insert(customers)
+      .values({
+        name: name.trim(),
+        address: address.trim(),
+        phone: phone?.trim() || null,
+        email: email?.trim() || null,
+        price: 0, // Default price for staff-created customers
+        notes: notes?.trim() || null,
+        cleanFrequency: "weekly", // Default frequency for staff-created customers
+        latitude,
+        longitude,
+        createdByUserId: userId,
+        active: true
+      })
+      .returning({
+        id: customers.id,
+        name: customers.name,
+        address: customers.address,
+        latitude: customers.latitude,
+        longitude: customers.longitude,
+        phone: customers.phone,
+        price: customers.price
+      });
+
+    console.log(`[Customer Creation] Staff member ${userId} created customer: ${newCustomer.name}`);
+
+    res.json({
+      success: true,
+      data: newCustomer,
+      message: "Customer created successfully"
+    });
+  } catch (error) {
+    console.error("Error creating customer:", error);
+    res.status(500).json({ success: false, error: "Failed to create customer" });
+  }
+});
+
 // Get active job for user
 router.get("/active-job", async (req: Request, res: Response) => {
   try {
@@ -276,6 +329,8 @@ router.post("/time-entries/clock-in", async (req: Request, res: Response) => {
   try {
     const { customerId, teamId, memberIds } = req.body;
     const userId = req.user!.id;
+    
+    console.log('🔍 Clock-in request received:', { customerId, teamId, memberIds, userId });
 
     if (!customerId || !teamId) {
       return res.status(400).json({ 
@@ -385,6 +440,20 @@ router.post("/time-entries/clock-in", async (req: Request, res: Response) => {
       });
     } catch (error) {
       console.error('Failed to broadcast dashboard update:', error);
+    }
+
+    // Send SSE event to all connected staff
+    try {
+      broadcastSSEEvent({
+        type: 'job_started',
+        jobId: newJob.id,
+        customerId,
+        teamId,
+        memberCount: newEntries.length,
+        timestamp: currentTime
+      });
+    } catch (error) {
+      console.error('Failed to send SSE event:', error);
     }
 
     res.json({ 
@@ -755,6 +824,19 @@ router.post("/time-entries/clock-out", async (req: Request, res: Response) => {
       console.error('Failed to broadcast dashboard update:', error);
     }
 
+    // Send SSE event to all connected staff
+    try {
+      broadcastSSEEvent({
+        type: 'job_ended',
+        jobId,
+        clockedOutMembers: updatedEntries.length,
+        isJobCompleted: isJobCompleted,
+        timestamp: clockOutTime
+      });
+    } catch (error) {
+      console.error('Failed to send SSE event:', error);
+    }
+
     res.json({ 
       success: true, 
       data: { 
@@ -769,5 +851,71 @@ router.post("/time-entries/clock-out", async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: "Failed to clock out" });
   }
 });
+
+// === SERVER-SENT EVENTS ===
+
+// Store active SSE connections
+const sseConnections = new Map<number, Response>();
+
+// SSE endpoint for staff events
+router.get("/events", async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  
+  if (!userId) {
+    res.status(401).json({ success: false, error: "Unauthorized" });
+    return;
+  }
+
+  // Set SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control'
+  });
+
+  // Send initial connection event
+  res.write(`data: ${JSON.stringify({ type: 'connected', userId })}\n\n`);
+
+  // Store connection
+  sseConnections.set(userId, res);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    sseConnections.delete(userId);
+    console.log(`SSE connection closed for user ${userId}`);
+  });
+
+  // Keep connection alive with heartbeat
+  const heartbeat = setInterval(() => {
+    if (!res.destroyed) {
+      res.write(`data: ${JSON.stringify({ type: 'heartbeat' })}\n\n`);
+    } else {
+      clearInterval(heartbeat);
+    }
+  }, 30000); // Every 30 seconds
+});
+
+// Helper function to send events to specific users
+export function sendSSEEvent(userId: number, event: any) {
+  const connection = sseConnections.get(userId);
+  if (connection && !connection.destroyed) {
+    connection.write(`data: ${JSON.stringify(event)}\n\n`);
+  }
+}
+
+// Helper function to send events to all connected users
+export function broadcastSSEEvent(event: any) {
+  console.log('📡 Broadcasting SSE event:', event.type, 'to', sseConnections.size, 'connections');
+  sseConnections.forEach((connection, userId) => {
+    if (!connection.destroyed) {
+      connection.write(`data: ${JSON.stringify(event)}\n\n`);
+      console.log('📤 Sent to user:', userId);
+    } else {
+      console.log('❌ Connection destroyed for user:', userId);
+    }
+  });
+}
 
 export default router; 

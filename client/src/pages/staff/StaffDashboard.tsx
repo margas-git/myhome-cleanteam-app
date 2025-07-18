@@ -5,6 +5,7 @@ import { useGeolocation } from "../../hooks/useGeolocation";
 import { useGoogleMaps } from "../../hooks/useGoogleMaps";
 import { ClockInModal } from "../../components/ClockInModal";
 import { ClockOutModal } from "../../components/ClockOutModal";
+import { AddCustomerModal } from "../../components/AddCustomerModal";
 import { formatAddress } from '../../utils/addressFormatter';
 import { formatPhoneNumber } from '../../utils/phoneFormatter';
 import { buildApiUrl } from "../../config/api";
@@ -233,8 +234,9 @@ export function StaffDashboard() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showClockInModal, setShowClockInModal] = useState(false);
   const [showClockOutModal, setShowClockOutModal] = useState(false);
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [preloadedTeams, setPreloadedTeams] = useState<any[]>([]);
   const [preloadedTeamMembers, setPreloadedTeamMembers] = useState<{ [teamId: number]: any[] }>({});
@@ -299,27 +301,82 @@ export function StaffDashboard() {
     }
   }, [location]);
 
-  // Set up periodic refresh for active job data when there's an active job
+  // Set up SSE connection for real-time updates
   useEffect(() => {
-    if (refreshIntervalRef.current) {
-      clearInterval(refreshIntervalRef.current);
-      refreshIntervalRef.current = null;
-    }
+    let eventSource: EventSource | null = null;
 
-    if (activeJob) {
-      refreshIntervalRef.current = setInterval(() => {
-        fetchActiveJob();
-      }, 30000);
-    }
+    const connectSSE = () => {
+      try {
+        eventSource = new EventSource(buildApiUrl("/api/staff/events"), {
+          withCredentials: true
+        });
 
-    return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-        refreshIntervalRef.current = null;
+        eventSource.onopen = () => {
+          console.log('SSE connection established');
+        };
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            switch (data.type) {
+              case 'connected':
+                console.log('SSE connected for user:', data.userId);
+                break;
+              case 'heartbeat':
+                // Keep connection alive
+                break;
+              case 'job_started':
+                console.log('Job started via SSE:', data);
+                // Refresh active job data
+                fetchActiveJob();
+                fetchData();
+                break;
+              case 'job_ended':
+                console.log('Job ended via SSE:', data);
+                // Clear active job and refresh data
+                setActiveJob(null);
+                fetchData();
+                break;
+              case 'job_updated':
+                console.log('Job updated via SSE:', data);
+                // Refresh active job data to get updated times
+                fetchActiveJob();
+                fetchData();
+                break;
+              default:
+                console.log('Unknown SSE event:', data);
+            }
+          } catch (error) {
+            console.error('Error parsing SSE event:', error);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error('SSE connection error:', error);
+          // Reconnect after a delay
+          setTimeout(() => {
+            if (eventSource) {
+              eventSource.close();
+              connectSSE();
+            }
+          }, 5000);
+        };
+      } catch (error) {
+        console.error('Failed to establish SSE connection:', error);
       }
     };
-  }, [activeJob?.id]);
 
+    connectSSE();
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, []);
+
+  // Keep polling for timer updates (every 1 second) but remove job status polling
   useEffect(() => {
     if (activeJob) {
       const timer = window.setInterval(() => {
@@ -487,6 +544,10 @@ export function StaffDashboard() {
   const handleClockOutSuccess = () => {
     setActiveJob(null);
     fetchData();
+  };
+
+  const handleAddCustomerSuccess = () => {
+    fetchCustomers();
   };
 
   const nearbyCustomers = useMemo(() => {
@@ -813,6 +874,15 @@ export function StaffDashboard() {
               <h2 className="text-xl font-semibold text-gray-900">Nearby Customers</h2>
               <div className="flex items-center space-x-3">
                 {getLocationStatusIcon()}
+                <button
+                  onClick={() => setShowAddCustomerModal(true)}
+                  className="inline-flex items-center px-3 py-2 border border-transparent rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Add Customer
+                </button>
               </div>
             </div>
             
@@ -992,6 +1062,12 @@ export function StaffDashboard() {
         isOpen={showClockOutModal}
         onClose={() => setShowClockOutModal(false)}
         onSuccess={handleClockOutSuccess}
+      />
+
+      <AddCustomerModal
+        isOpen={showAddCustomerModal}
+        onClose={() => setShowAddCustomerModal(false)}
+        onSuccess={handleAddCustomerSuccess}
       />
     </div>
   );
