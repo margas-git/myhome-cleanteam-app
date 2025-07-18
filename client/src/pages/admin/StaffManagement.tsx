@@ -226,62 +226,65 @@ export function StaffManagement() {
           {staff
             .filter(member => showArchived ? !member.active : member.active)
             .map((member) => (
-              <div key={member.id} className={`bg-white rounded-lg shadow-md p-6 ${!member.active ? 'opacity-60' : ''}`}>
-                <div className="flex justify-between items-start mb-1">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                      {member.firstName} {member.lastName}
-                    </h3>
-                    <div className="flex items-center space-x-2 mb-2">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      <p className="text-sm text-gray-600">
-                        {member.email}
-                      </p>
-                    </div>
-                    {member.phone && (
-                      <div className="flex items-center space-x-2 mb-2">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                        <p className="text-sm text-gray-500">
-                          {formatPhoneNumber(member.phone)}
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex items-center space-x-2 mt-3">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        member.role === 'admin' ? 'bg-red-100 text-red-800' :
-                        member.role === 'manager' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                      </span>
-                      {member.team && (
-                        <span 
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
-                          style={{ backgroundColor: member.team.teamColor }}
-                        >
-                          {member.team.teamName}
-                        </span>
-                      )}
-                      {!member.active && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          Archived
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleEditStaff(member)}
-                    className="inline-flex items-center p-2 border border-gray-300 rounded text-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    title="Edit Staff"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              <div key={member.id} className={`bg-white rounded-lg shadow-md p-6 relative ${!member.active ? 'opacity-60' : ''}`}>
+                {/* Edit button positioned absolutely in top-right corner */}
+                <button
+                  onClick={() => handleEditStaff(member)}
+                  className="absolute top-4 right-4 inline-flex items-center p-2 border border-gray-300 rounded text-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-sm"
+                  title="Edit Staff"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                
+                <div className="pr-12">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                    {member.firstName} {member.lastName}
+                  </h3>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <svg className="w-4 h-4 min-w-4 min-h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
                     </svg>
-                  </button>
+                    <p className="text-sm text-gray-600 truncate max-w-full" style={{overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                      {member.email}
+                    </p>
+                  </div>
+                  {member.phone && (
+                    <div className="flex items-center space-x-2 mb-2">
+                      <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                      <a 
+                        href={`tel:${member.phone.replace(/\s/g, '')}`}
+                        className="text-sm text-gray-500 hover:text-blue-600 transition-colors duration-200"
+                      >
+                        {formatPhoneNumber(member.phone)}
+                      </a>
+                    </div>
+                  )}
+                  <div className="flex items-center space-x-2 mt-3">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      member.role === 'admin' ? 'bg-red-100 text-red-800' :
+                      member.role === 'manager' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-blue-100 text-blue-800'
+                    }`}>
+                      {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                    </span>
+                    {member.team && (
+                      <span 
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+                        style={{ backgroundColor: member.team.teamColor }}
+                      >
+                        {member.team.teamName}
+                      </span>
+                    )}
+                    {!member.active && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        Archived
+                      </span>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="space-y-2">

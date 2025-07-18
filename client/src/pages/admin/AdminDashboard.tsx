@@ -49,9 +49,11 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [editingClean, setEditingClean] = useState<Clean | null>(null);
   const [saving, setSaving] = useState(false);
-  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('today');
-  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('custom');
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
   const [isUpdating, setIsUpdating] = useState(false);
+  const [appliedDateFilter, setAppliedDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('custom');
+  const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
   
   // Historical team view state
   const [showHistoricalTeamView, setShowHistoricalTeamView] = useState(false);
@@ -186,9 +188,17 @@ export function AdminDashboard() {
     }
 
     try {
+      // Build query parameters for completed cleans API
+      const completedParams = new URLSearchParams();
+      completedParams.append('dateFilter', appliedDateFilter);
+      if (appliedDateFilter === 'custom' && appliedCustomRange.start && appliedCustomRange.end) {
+        completedParams.append('customStart', appliedCustomRange.start);
+        completedParams.append('customEnd', appliedCustomRange.end);
+      }
+
       const [statsResponse, completedResponse, activeResponse] = await Promise.all([
-        fetch(buildApiUrl(`/api/admin/dashboard?dateFilter=${dateFilter}`), { credentials: "include" }),
-        fetch(buildApiUrl("/api/admin/cleans/completed"), { credentials: "include" }),
+        fetch(buildApiUrl(`/api/admin/dashboard?dateFilter=${appliedDateFilter}`), { credentials: "include" }),
+        fetch(buildApiUrl(`/api/admin/cleans/completed?${completedParams.toString()}`), { credentials: "include" }),
         fetch(buildApiUrl("/api/admin/cleans/active"), { credentials: "include" })
       ]);
       
@@ -216,11 +226,11 @@ export function AdminDashboard() {
       setLoading(false);
       setIsUpdating(false);
     }
-  }, [dateFilter]);
+  }, [appliedDateFilter, appliedCustomRange]);
 
   useEffect(() => {
     fetchDashboardData(true);
-  }, [dateFilter, fetchDashboardData]);
+  }, [appliedDateFilter, appliedCustomRange, fetchDashboardData]);
 
   // Set up polling for real-time updates (temporary replacement for SSE)
   useEffect(() => {
@@ -387,6 +397,16 @@ export function AdminDashboard() {
                       />
                     </div>
                   )}
+                  
+                  <button
+                    onClick={() => {
+                      setAppliedDateFilter(dateFilter);
+                      setAppliedCustomRange(customRange);
+                    }}
+                    className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    Apply Filter
+                  </button>
                 </div>
                 
                 <div className="flex items-center space-x-3">
@@ -428,7 +448,7 @@ export function AdminDashboard() {
               </div>
             </div>
             {(() => {
-              const { start, end } = getDateRange(dateFilter);
+              const { start, end } = getDateRange(appliedDateFilter);
               const format = (d: Date) => `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
               // Subtract 1 minute from end for display
               const displayEnd = new Date(end.getTime() - 1 * 60 * 1000);
@@ -685,16 +705,16 @@ export function AdminDashboard() {
                 <path d="M21.801 10A10 10 0 1 1 17 3.335"></path>
                 <path d="m9 11 3 3L22 4"></path>
               </svg>
-              Completed Cleans ({filterCleansByDate(completedCleans, dateFilter).length})
+              Completed Cleans ({completedCleans.length})
             </div>
           </div>
           <div className="p-6 pt-0">
             <div className="space-y-4">
-              {filterCleansByDate(completedCleans, dateFilter).length === 0 ? (
+              {completedCleans.length === 0 ? (
                 <div className="text-center text-gray-500 py-8">No completed cleans for selected date range</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {filterCleansByDate(completedCleans, dateFilter).map((clean) => (
+                  {completedCleans.map((clean) => (
                     <div key={clean.jobId} className="bg-gray-50 rounded-lg shadow-md p-6 transition-all duration-300 ease-in-out hover:shadow-lg">
                       <div className="flex justify-between items-start mb-1">
                         <div className="flex-1">
@@ -817,7 +837,7 @@ export function AdminDashboard() {
           <div className="p-6 pt-0">
             <AdminDashboardMap 
               customers={[
-                ...filterCleansByDate(activeCleans, dateFilter).map(clean => ({
+                ...activeCleans.map(clean => ({
                   id: clean.jobId,
                   name: clean.customerName,
                   address: clean.customerAddress,
@@ -826,7 +846,7 @@ export function AdminDashboard() {
                   teamColor: clean.teamColor,
                   status: 'active' as const
                 })),
-                ...filterCleansByDate(completedCleans, dateFilter).map(clean => ({
+                ...completedCleans.map(clean => ({
                   id: clean.jobId,
                   name: clean.customerName,
                   address: clean.customerAddress,

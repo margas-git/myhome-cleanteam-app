@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db/connection.js";
 import { users, teams, customers, timeEntries, jobs, teamsUsers, settings, lunchBreakOverrides, timeAllocationTiers } from "../db/schema.js";
-import { eq, and, sql, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, desc, inArray, lte, or, isNull, gte } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { addUserToTeam, removeUserFromTeam, getTeamMembersAtDate, getUserTeamsAtDate, getCurrentUserTeams } from "../utils/teamUtils.js";
 
@@ -262,7 +262,8 @@ router.get("/staff", async (req: Request, res: Response) => {
       .from(users)
       .orderBy(users.firstName, users.lastName);
 
-    // Get team assignments for each staff member
+    // Get current team assignments for each staff member (using temporal fields)
+    const today = new Date().toISOString().split('T')[0];
     const teamAssignments = await db
       .select({
         userId: teamsUsers.userId,
@@ -272,7 +273,16 @@ router.get("/staff", async (req: Request, res: Response) => {
       })
       .from(teamsUsers)
       .innerJoin(teams, eq(teamsUsers.teamId, teams.id))
-      .where(eq(teams.active, true));
+      .where(
+        and(
+          eq(teams.active, true),
+          lte(teamsUsers.startDate, today),
+          or(
+            isNull(teamsUsers.endDate),
+            gte(teamsUsers.endDate, today)
+          )
+        )
+      );
 
     // Get active time entries for each staff member
     const activeEntries = await db
@@ -459,7 +469,8 @@ router.get("/teams", async (req: Request, res: Response) => {
       .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
       .where(sql`${timeEntries.clockOutTime} IS NULL`);
 
-    // Get members for all teams
+    // Get current members for all teams (using temporal fields)
+    const today = new Date().toISOString().split('T')[0];
     const allTeamMembers = await db
       .select({
         teamId: teamsUsers.teamId,
@@ -471,6 +482,15 @@ router.get("/teams", async (req: Request, res: Response) => {
       })
       .from(users)
       .innerJoin(teamsUsers, eq(users.id, teamsUsers.userId))
+      .where(
+        and(
+          lte(teamsUsers.startDate, today),
+          or(
+            isNull(teamsUsers.endDate),
+            gte(teamsUsers.endDate, today)
+          )
+        )
+      )
       .orderBy(teamsUsers.teamId, users.firstName, users.lastName);
 
     // Fetch staff pay rate from settings
@@ -826,7 +846,56 @@ router.get("/users/:userId/teams", async (req: Request, res: Response) => {
 // Get completed cleans
 router.get("/cleans/completed", async (req: Request, res: Response) => {
   try {
-    // Get all completed jobs (jobs where ALL time entries have clockOutTime)
+    const dateFilter = req.query.dateFilter as string || 'today';
+    const customStart = req.query.customStart as string;
+    const customEnd = req.query.customEnd as string;
+    
+    // Get date range based on filter
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayOfWeek = today.getDay();
+    let startDate: Date, endDate: Date;
+    
+    switch (dateFilter) {
+      case 'yesterday':
+        startDate = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+        endDate = today;
+        break;
+      case 'thisWeek':
+        // Get Monday of current week (assuming Monday is start of work week)
+        const monday = new Date(today.getTime() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+        const friday = new Date(monday.getTime() + 5 * 24 * 60 * 60 * 1000);
+        startDate = monday;
+        endDate = new Date(friday.getTime() + 24 * 60 * 60 * 1000);
+        break;
+      case 'lastWeek':
+        // Get Monday of last week
+        const lastWeekMonday = new Date(today.getTime() - (dayOfWeek === 0 ? 13 : dayOfWeek + 6) * 24 * 60 * 60 * 1000);
+        const lastWeekFriday = new Date(lastWeekMonday.getTime() + 5 * 24 * 60 * 60 * 1000);
+        startDate = lastWeekMonday;
+        endDate = new Date(lastWeekFriday.getTime() + 24 * 60 * 60 * 1000);
+        break;
+      case 'custom':
+        if (customStart && customEnd) {
+          startDate = new Date(customStart);
+          endDate = new Date(customEnd);
+          endDate.setDate(endDate.getDate() + 1); // Include the end date
+        } else {
+          startDate = today;
+          endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+        }
+        break;
+      default: // today
+        startDate = today;
+        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+        break;
+    }
+
+    // Convert local time boundaries to UTC for database queries
+    const startUTC = new Date(startDate.getTime() - startDate.getTimezoneOffset() * 60000);
+    const endUTC = new Date(endDate.getTime() - endDate.getTimezoneOffset() * 60000);
+
+    // Get completed jobs for the specified date range (jobs where ALL time entries have clockOutTime)
     const completedJobs = await db
       .select({
         jobId: jobs.id,
@@ -848,7 +917,13 @@ router.get("/cleans/completed", async (req: Request, res: Response) => {
       .innerJoin(customers, eq(jobs.customerId, customers.id))
       .leftJoin(teams, eq(jobs.teamId, teams.id))
       .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
-      .where(sql`${timeEntries.clockOutTime} IS NOT NULL`)
+      .where(
+        and(
+          sql`${timeEntries.clockOutTime} IS NOT NULL`,
+          sql`${timeEntries.clockOutTime} >= ${startUTC.toISOString()}`,
+          sql`${timeEntries.clockOutTime} < ${endUTC.toISOString()}`
+        )
+      )
       .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes, jobs.teamMembersAtCreation, jobs.additionalStaff)
       .having(sql`COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`)
       .orderBy(sql`MAX(${timeEntries.clockOutTime}) DESC`);
@@ -2727,3 +2802,7 @@ function parseMaybeJson(val: any) {
   if (Array.isArray(val)) return val;
   return [];
 }
+
+
+
+// === CUSTOMER MANAGEMENT ===
