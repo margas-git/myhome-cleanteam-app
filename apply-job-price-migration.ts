@@ -1,4 +1,4 @@
-import { db } from "./server/db/connection";
+import { db } from "./server/db/connection.js";
 import { sql } from "drizzle-orm";
 
 async function applyJobPriceMigration() {

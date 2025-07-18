@@ -2,8 +2,8 @@ import { config } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
-import { db } from "./db/connection";
-import { users, teams, customers, teamsUsers, jobs, timeEntries, timeAllocationTiers } from "./db/schema";
+import { db } from "./db/connection.js";
+import { users, teams, customers, teamsUsers, jobs, timeEntries, timeAllocationTiers } from "./db/schema.js";
 // Load .env from the root directory
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
