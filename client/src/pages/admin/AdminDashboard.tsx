@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AdminLayout } from "../../components/AdminLayout";
 import { formatAddress } from "../../utils/addressFormatter";
 import { AdminDashboardMap } from "../../components/AdminDashboardMap";
+import { HistoricalTeamView } from "../../components/HistoricalTeamView";
 import { buildApiUrl } from "../../config/api";
 
 interface DashboardStats {
@@ -36,6 +37,7 @@ interface Clean {
     clockOutTime?: string;
     teamName?: string;
     teamColor?: string;
+    isCoreTeam?: boolean;
   }[];
   isFriendsFamily?: boolean;
 }
@@ -50,11 +52,15 @@ export function AdminDashboard() {
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('today');
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [isUpdating, setIsUpdating] = useState(false);
+  
+  // Historical team view state
+  const [showHistoricalTeamView, setShowHistoricalTeamView] = useState(false);
+  const [selectedHistoricalDate, setSelectedHistoricalDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Refs for the datetime inputs
   const clockInRef = useRef<HTMLInputElement>(null);
   const clockOutRef = useRef<HTMLInputElement>(null);
-  const updateTimeoutRef = useRef<number | null>(null);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper function to convert UTC time to local datetime-local format (without seconds)
   const toLocalDateTimeString = (utcDateString: string) => {
@@ -218,7 +224,7 @@ export function AdminDashboard() {
 
   // Set up polling for real-time updates (temporary replacement for SSE)
   useEffect(() => {
-    let pollInterval: number | null = null;
+    let pollInterval: NodeJS.Timeout | null = null;
 
     const startPolling = () => {
       // Poll every 10 seconds for updates
@@ -345,39 +351,81 @@ export function AdminDashboard() {
                 Monitor active cleans, view completed jobs, and manage your team.
               </p>
             </div>
-            <div className="flex items-center space-x-2">
-              <label htmlFor="dateFilter" className="text-sm font-medium text-gray-700">
-                Date Range:
-              </label>
-              <select
-                id="dateFilter"
-                value={dateFilter}
-                onChange={e => setDateFilter(e.target.value as any)}
-                className="block w-40 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              >
-                <option value="today">Today</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="thisWeek">This Week</option>
-                <option value="lastWeek">Last Week</option>
-                <option value="custom">Custom Range</option>
-              </select>
-              {dateFilter === 'custom' && (
-                <div className="flex items-center space-x-2 mt-2">
-                  <input
-                    type="date"
-                    value={customRange.start}
-                    onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))}
-                    className="px-2 py-1 border border-gray-300 rounded-md"
-                  />
-                  <span>to</span>
-                  <input
-                    type="date"
-                    value={customRange.end}
-                    onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))}
-                    className="px-2 py-1 border border-gray-300 rounded-md"
-                  />
+            {/* Date Filter Controls */}
+            <div className="mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <label className="text-sm font-medium text-gray-700">Date Range:</label>
+                    <select
+                      value={dateFilter}
+                      onChange={(e) => setDateFilter(e.target.value as 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom')}
+                      className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="today">Today</option>
+                      <option value="yesterday">Yesterday</option>
+                      <option value="thisWeek">This Week</option>
+                      <option value="lastWeek">Last Week</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                  </div>
+                  
+                  {dateFilter === 'custom' && (
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="date"
+                        value={customRange.start}
+                        onChange={(e) => setCustomRange({ ...customRange, start: e.target.value })}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <span className="text-gray-500">to</span>
+                      <input
+                        type="date"
+                        value={customRange.end}
+                        onChange={(e) => setCustomRange({ ...customRange, end: e.target.value })}
+                        className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+                
+                <div className="flex items-center space-x-3">
+                  {/* Historical Team View Button */}
+                  <button
+                    onClick={() => setShowHistoricalTeamView(true)}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    title="View historical team composition"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Historical Teams
+                  </button>
+                  
+                  <button
+                    onClick={() => fetchDashboardData(true)}
+                    disabled={isUpdating}
+                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                  >
+                    {isUpdating ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
             {(() => {
               const { start, end } = getDateRange(dateFilter);
@@ -599,8 +647,18 @@ export function AdminDashboard() {
                           >
                             {clean.teamName}
                           </span>
-                          {/* Show additional team members from other teams */}
-                          {clean.members && clean.members.filter(m => m.teamName && m.teamName !== clean.teamName).map((member) => (
+                          {/* Show core team members in team color */}
+                          {clean.members && clean.members.filter(m => m.isCoreTeam).map((member) => (
+                            <span
+                              key={member.id}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: clean.teamColor + '20', color: clean.teamColor }}
+                            >
+                              {member.name}
+                            </span>
+                          ))}
+                          {/* Show additional staff with + prefix */}
+                          {clean.members && clean.members.filter(m => !m.isCoreTeam).map((member) => (
                             <span
                               key={member.id}
                               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
@@ -715,8 +773,18 @@ export function AdminDashboard() {
                           >
                             {clean.teamName}
                           </span>
-                          {/* Show additional team members from other teams */}
-                          {clean.members && clean.members.filter(m => m.teamName && m.teamName !== clean.teamName).map((member) => (
+                          {/* Show core team members in team color */}
+                          {clean.members && clean.members.filter(m => m.isCoreTeam).map((member) => (
+                            <span
+                              key={member.id}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              style={{ backgroundColor: clean.teamColor + '20', color: clean.teamColor }}
+                            >
+                              {member.name}
+                            </span>
+                          ))}
+                          {/* Show additional staff with + prefix */}
+                          {clean.members && clean.members.filter(m => !m.isCoreTeam).map((member) => (
                             <span
                               key={member.id}
                               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
@@ -773,6 +841,14 @@ export function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Historical Team View Modal */}
+      {showHistoricalTeamView && (
+        <HistoricalTeamView
+          selectedDate={selectedHistoricalDate}
+          onClose={() => setShowHistoricalTeamView(false)}
+        />
+      )}
 
       {/* Edit Clean Modal */}
       {editingClean && (

@@ -8,6 +8,7 @@ import { existsSync, readdirSync } from "fs";
 import { authRouter } from "./routes/auth.js";
 import staffRouter from "./routes/staff.js";
 import adminRouter from "./routes/admin.js";
+import invoiceRouter from "./routes/invoices.js";
 import { authMiddleware } from "./middleware/auth.js";
 // import other route modules as they are implemented
 
@@ -103,6 +104,7 @@ export function createServer() {
   app.use("/api/auth", authRouter);
   app.use("/api/staff", authMiddleware, staffRouter);
   app.use("/api/admin", authMiddleware, adminRouter);
+  app.use("/api/invoices", authMiddleware, invoiceRouter);
 
   // Only serve static files in production
   if (process.env.NODE_ENV === 'production') {

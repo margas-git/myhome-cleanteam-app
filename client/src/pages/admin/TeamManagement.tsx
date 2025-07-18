@@ -32,6 +32,17 @@ interface Staff {
   active: boolean;
 }
 
+interface TeamMember {
+  userId: number;
+  teamId: number;
+  startDate: string;
+  endDate: string | null;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+}
+
 export function TeamManagement() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
@@ -49,6 +60,22 @@ export function TeamManagement() {
     name: "",
     color: "#3B82F6"
   });
+  
+  // Temporal team membership state
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  const [newMemberData, setNewMemberData] = useState({
+    userId: "",
+    startDate: new Date().toISOString().split('T')[0]
+  });
+  const [showRemoveMemberModal, setShowRemoveMemberModal] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
+  const [removeMemberData, setRemoveMemberData] = useState({
+    endDate: new Date().toISOString().split('T')[0]
+  });
+  // Add date picker for historical view
+  const [viewDate, setViewDate] = useState(new Date().toISOString().split('T')[0]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
 
   const colorOptions = [
     { value: "#3B82F6", name: "Blue" },
@@ -74,7 +101,33 @@ export function TeamManagement() {
       
       if (response.ok) {
         const data = await response.json();
-        setTeams(data.data);
+        const teamsWithMembers = await Promise.all(
+          data.data.map(async (team: Team) => {
+            try {
+              // Fetch current team members for each team
+              const membersResponse = await fetch(buildApiUrl(`/api/admin/teams/${team.id}/members/${new Date().toISOString().split('T')[0]}`), {
+                credentials: "include"
+              });
+              
+              if (membersResponse.ok) {
+                const membersData = await membersResponse.json();
+                return {
+                  ...team,
+                  members: membersData.data.members || []
+                };
+              }
+            } catch (error) {
+              console.error(`Failed to fetch members for team ${team.id}:`, error);
+            }
+            
+            return {
+              ...team,
+              members: []
+            };
+          })
+        );
+        
+        setTeams(teamsWithMembers);
       }
     } catch (error) {
       console.error("Failed to fetch teams:", error);
@@ -148,6 +201,8 @@ export function TeamManagement() {
           name: teamWithMembers.name,
           color: teamWithMembers.colorHex
         });
+        // Fetch team members for current date
+        await fetchTeamMembers(team.id, viewDate);
       }
     } catch (error) {
       console.error("Failed to fetch team details:", error);
@@ -157,6 +212,22 @@ export function TeamManagement() {
         name: team.name,
         color: team.colorHex
       });
+    }
+  };
+
+  const fetchTeamMembers = async (teamId: number, date: string) => {
+    try {
+      const response = await fetch(buildApiUrl(`/api/admin/teams/${teamId}/members/${date}`), {
+        credentials: "include"
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setTeamMembers(data.data.members || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch team members:", error);
+      setTeamMembers([]);
     }
   };
 
@@ -216,19 +287,34 @@ export function TeamManagement() {
     }
   };
 
-  const handleAddTeamMember = async (teamId: number, userId: number) => {
+  // Temporal team membership functions
+  const handleAddTeamMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTeamId || !newMemberData.userId) return;
+
     try {
-      const response = await fetch(buildApiUrl(`/api/admin/teams/${teamId}/members`), {
+      const response = await fetch(buildApiUrl(`/api/admin/teams/${selectedTeamId}/members`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         credentials: "include",
-        body: JSON.stringify({ userId })
+        body: JSON.stringify({
+          userId: parseInt(newMemberData.userId),
+          startDate: newMemberData.startDate
+        })
       });
       
       if (response.ok) {
-        // Refresh the editing team data to show the new member
+        // Reset form and close modal
+        setNewMemberData({
+          userId: "",
+          startDate: new Date().toISOString().split('T')[0]
+        });
+        setShowAddMemberModal(false);
+        setSelectedTeamId(null);
+        
+        // Refresh team data
         if (editingTeam) {
           const teamResponse = await fetch(buildApiUrl(`/api/admin/teams/${editingTeam.id}`), {
             credentials: "include"
@@ -239,7 +325,6 @@ export function TeamManagement() {
             setEditingTeam(teamData.data);
           }
         }
-        // Also refresh the main teams list
         fetchTeams();
       } else {
         const error = await response.json();
@@ -251,19 +336,33 @@ export function TeamManagement() {
     }
   };
 
-  const handleRemoveTeamMember = async (teamId: number, userId: number) => {
+  const handleRemoveTeamMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!memberToRemove) return;
+
     try {
-      const response = await fetch(buildApiUrl(`/api/admin/teams/${teamId}/members/${userId}`), {
+      const response = await fetch(buildApiUrl(`/api/admin/teams/${memberToRemove.teamId}/members/${memberToRemove.userId}`), {
         method: "DELETE",
-        credentials: "include"
+        headers: {
+          "Content-Type": "application/json"
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          endDate: removeMemberData.endDate
+        })
       });
 
       if (response.ok) {
-        // Refresh team details and teams list
-        fetchTeams();
-        // Refresh the editing team data
+        // Reset form and close modal
+        setRemoveMemberData({
+          endDate: new Date().toISOString().split('T')[0]
+        });
+        setShowRemoveMemberModal(false);
+        setMemberToRemove(null);
+        
+        // Refresh team data
         if (editingTeam) {
-          const teamResponse = await fetch(buildApiUrl(`/api/admin/teams/${teamId}`), {
+          const teamResponse = await fetch(buildApiUrl(`/api/admin/teams/${editingTeam.id}`), {
             credentials: "include"
           });
           if (teamResponse.ok) {
@@ -271,6 +370,7 @@ export function TeamManagement() {
             setEditingTeam(data.data);
           }
         }
+        fetchTeams();
       } else {
         const error = await response.json();
         alert(`Failed to remove team member: ${error.error}`);
@@ -279,6 +379,34 @@ export function TeamManagement() {
       console.error("Failed to remove team member:", error);
       alert("Failed to remove team member");
     }
+  };
+
+  const openAddMemberModal = (teamId: number) => {
+    setSelectedTeamId(teamId);
+    setShowAddMemberModal(true);
+  };
+
+  const openRemoveMemberModal = (member: TeamMember) => {
+    setMemberToRemove(member);
+    setRemoveMemberData({
+      endDate: new Date().toISOString().split('T')[0]
+    });
+    setShowRemoveMemberModal(true);
+  };
+
+  const handleDateChange = async (newDate: string) => {
+    setViewDate(newDate);
+    if (editingTeam) {
+      await fetchTeamMembers(editingTeam.id, newDate);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const isCurrentMember = (member: TeamMember) => {
+    return !member.endDate || new Date(member.endDate) > new Date();
   };
 
   if (loading) {
@@ -297,7 +425,7 @@ export function TeamManagement() {
             Team Management
           </h1>
           <p className="mt-2 text-gray-600">
-            Create and manage cleaning teams, assign members, and track performance.
+            Create and manage cleaning teams with temporal membership tracking. Click "Edit Team" to view historical composition and manage team members with start/end dates.
           </p>
         </div>
 
@@ -370,12 +498,12 @@ export function TeamManagement() {
               )}
               
               <div className="text-sm text-gray-500 mb-3">
-                {/* Show team members instead of count */}
+                {/* Show current team members */}
                 <div className="mb-2 flex items-center">
                   <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
-                  <span className="font-medium">Team Members:</span>
+                  <span className="font-medium">Current Team Members:</span>
                 </div>
                 {team.members && team.members.length > 0 ? (
                   <div className="space-y-1 ml-6 mb-5">
@@ -386,8 +514,11 @@ export function TeamManagement() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-gray-400 italic ml-6 mb-5">No members assigned</div>
+                  <div className="text-gray-400 italic ml-6 mb-5">No current members</div>
                 )}
+                <div className="text-gray-400 italic ml-6 mb-2 text-xs">
+                  Click "Edit Team" to view historical composition
+                </div>
                 
                 {/* Team Performance Metrics */}
                 <div className="mt-3 space-y-2">
@@ -577,13 +708,24 @@ export function TeamManagement() {
 
                 {/* Staff Management Section */}
                 <div className="mt-6 border-t pt-4">
-                  {/* Current Team Members */}
+                  {/* Date Picker for Historical View */}
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Current Members:</label>
-                    {editingTeam.members && editingTeam.members.length > 0 ? (
+                    <label className="block text-sm font-medium text-gray-700 mb-2">View Team Composition On:</label>
+                    <input
+                      type="date"
+                      value={viewDate}
+                      onChange={(e) => handleDateChange(e.target.value)}
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Team Members for Selected Date */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Team Members (as of {formatDate(viewDate)}):</label>
+                    {teamMembers && teamMembers.length > 0 ? (
                       <div className="space-y-2">
-                        {editingTeam.members.map((member) => (
-                          <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
+                        {teamMembers.map((member) => (
+                          <div key={`${member.userId}-${member.startDate}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                                 <span className="text-sm font-medium text-blue-700">
@@ -594,12 +736,14 @@ export function TeamManagement() {
                                 <div className="text-sm font-medium text-gray-900">
                                   {member.firstName} {member.lastName}
                                 </div>
-                                <div className="text-xs text-gray-500">{member.role}</div>
+                                <div className="text-xs text-gray-500">
+                                  {member.role} • {formatDate(member.startDate)} - {member.endDate ? formatDate(member.endDate) : 'Active'}
+                                </div>
                               </div>
                             </div>
                             <button
                               type="button"
-                              onClick={() => handleRemoveTeamMember(editingTeam.id, member.id)}
+                              onClick={() => openRemoveMemberModal(member)}
                               className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"
                               title="Remove member"
                             >
@@ -612,43 +756,33 @@ export function TeamManagement() {
                       </div>
                     ) : (
                       <div className="text-sm text-gray-500 italic p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        No members assigned
+                        No members assigned on this date
                       </div>
                     )}
                   </div>
 
-                  {/* Add New Member */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Add Member:</label>
-                    <select
-                      onChange={(e) => {
-                        const selectedStaff = allStaff.find(staff => staff.id === parseInt(e.target.value));
-                        if (selectedStaff) {
-                          handleAddTeamMember(editingTeam.id, selectedStaff.id);
-                        }
-                      }}
-                      className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      defaultValue=""
+                  {/* Add New Member Button */}
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => openAddMemberModal(editingTeam.id)}
+                      className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                     >
-                      <option value="" disabled>Select staff member...</option>
-                      {allStaff
-                        .filter(staff => {
-                          // Only show active staff who are not already assigned to any team
-                          if (!staff.active) return false;
-                          
-                          // Check if staff is already assigned to any team
-                          const isAssignedToAnyTeam = teams.some(team => 
-                            team.members && team.members.some(member => member.id === staff.id)
-                          );
-                          
-                          return !isAssignedToAnyTeam;
-                        })
-                        .map((staff) => (
-                          <option key={staff.id} value={staff.id}>
-                            {staff.firstName} {staff.lastName}
-                          </option>
-                        ))}
-                    </select>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Add Member (with start date)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {/* TODO: Open historical view modal */}}
+                      className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-600 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      View Historical Changes
+                    </button>
                   </div>
                 </div>
 
@@ -698,6 +832,136 @@ export function TeamManagement() {
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Member Modal */}
+      {showAddMemberModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
+            <button
+              onClick={() => setShowAddMemberModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Add Team Member
+            </h3>
+            
+            <form onSubmit={handleAddTeamMember} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Staff Member *
+                </label>
+                <select
+                  required
+                  value={newMemberData.userId}
+                  onChange={(e) => setNewMemberData({ ...newMemberData, userId: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="">Select staff member...</option>
+                  {allStaff
+                    .filter(staff => staff.active)
+                    .map((staff) => (
+                      <option key={staff.id} value={staff.id}>
+                        {staff.firstName} {staff.lastName}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Start Date *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newMemberData.startDate}
+                  onChange={(e) => setNewMemberData({ ...newMemberData, startDate: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddMemberModal(false)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Add Member
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Member Modal */}
+      {showRemoveMemberModal && memberToRemove && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
+            <button
+              onClick={() => setShowRemoveMemberModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Remove Team Member
+            </h3>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                Remove <strong>{memberToRemove.firstName} {memberToRemove.lastName}</strong> from the team?
+              </p>
+            </div>
+            
+            <form onSubmit={handleRemoveTeamMember} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  End Date *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={removeMemberData.endDate}
+                  onChange={(e) => setRemoveMemberData({ ...removeMemberData, endDate: e.target.value })}
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  The member will be removed from the team on this date.
+                </p>
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowRemoveMemberModal(false)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  Remove Member
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

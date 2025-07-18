@@ -3,7 +3,7 @@ import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import bcrypt from "bcryptjs";
 import { db } from "./db/connection";
-import { users, teams, customers, teamsUsers, jobs, timeEntries } from "./db/schema";
+import { users, teams, customers, teamsUsers, jobs, timeEntries, timeAllocationTiers } from "./db/schema";
 // Load .env from the root directory
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,6 +37,34 @@ async function seed() {
         teamId: team.id,
         userId: user.id
     });
+    // Create default price tiers
+    await db.insert(timeAllocationTiers).values([
+        {
+            priceMin: "100.00",
+            priceMax: "150.00",
+            allottedMinutes: 90
+        },
+        {
+            priceMin: "151.00",
+            priceMax: "200.00",
+            allottedMinutes: 120
+        },
+        {
+            priceMin: "201.00",
+            priceMax: "250.00",
+            allottedMinutes: 150
+        },
+        {
+            priceMin: "251.00",
+            priceMax: "300.00",
+            allottedMinutes: 180
+        },
+        {
+            priceMin: "301.00",
+            priceMax: "400.00",
+            allottedMinutes: 240
+        }
+    ]);
     // Create test customers
     const [customer1, customer2] = await db.insert(customers).values([
         {
