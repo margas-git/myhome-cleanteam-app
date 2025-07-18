@@ -319,39 +319,44 @@ export function StaffDashboard() {
         };
 
         eventSource.onmessage = (event) => {
+          console.log('📨 SSE message received:', event.data);
           try {
             const data = JSON.parse(event.data);
+            console.log('📋 Parsed SSE data:', data);
             
             switch (data.type) {
               case 'connected':
-                console.log('SSE connected for user:', data.userId);
+                console.log('✅ SSE connected for user:', data.userId);
                 break;
               case 'heartbeat':
+                console.log('💓 SSE heartbeat received');
                 // Keep connection alive
                 break;
               case 'job_started':
-                console.log('Job started via SSE:', data);
+                console.log('🚀 Job started via SSE:', data);
                 // Refresh active job data
                 fetchActiveJob();
                 fetchData();
                 break;
               case 'job_ended':
-                console.log('Job ended via SSE:', data);
+                console.log('🏁 Job ended via SSE:', data);
                 // Clear active job and refresh data
                 setActiveJob(null);
                 fetchData();
                 break;
               case 'job_updated':
-                console.log('Job updated via SSE:', data);
+                console.log('🔄 Job updated via SSE:', data);
+                console.log('📊 Current active job before update:', activeJob);
                 // Refresh active job data to get updated times
                 fetchActiveJob();
                 fetchData();
                 break;
               default:
-                console.log('Unknown SSE event:', data);
+                console.log('❓ Unknown SSE event:', data);
             }
           } catch (error) {
-            console.error('Error parsing SSE event:', error);
+            console.error('❌ Error parsing SSE event:', error);
+            console.error('Raw event data:', event.data);
           }
         };
 
@@ -475,13 +480,17 @@ export function StaffDashboard() {
 
   const fetchActiveJob = async () => {
     try {
+      console.log('🔄 Fetching active job...');
       const response = await fetch(buildApiUrl("/api/staff/active-job"), { credentials: "include" });
       if (response.ok) {
         const data = await response.json();
+        console.log('📊 Active job data received:', data.data);
         setActiveJob(data.data);
+      } else {
+        console.error('❌ Failed to fetch active job:', response.status, response.statusText);
       }
     } catch (error) {
-      console.error("Failed to fetch active job:", error);
+      console.error("❌ Failed to fetch active job:", error);
     }
   };
 
