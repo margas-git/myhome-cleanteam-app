@@ -1,7 +1,7 @@
-import { db } from "../server/db/connection.ts";
+import { db } from "../server/db/connection";
 import { sql } from "drizzle-orm";
 import XLSX from "xlsx";
-import { customers, jobs, timeEntries } from "../server/db/schema.ts";
+import { customers, jobs, timeEntries } from "../server/db/schema";
 
 async function importExportedData() {
   try {

@@ -19,7 +19,7 @@ if (!connectionString) {
 }
 
 const client = postgres(connectionString);
-import * as schema from "./schema.ts";
+import * as schema from "./schema";
 
 export const db = drizzle(client, { schema });
 export { client }; 
