@@ -8,7 +8,7 @@ import { ClockOutModal } from "../../components/ClockOutModal";
 import { AddCustomerModal } from "../../components/AddCustomerModal";
 import { formatAddress } from '../../utils/addressFormatter';
 import { formatPhoneNumber } from '../../utils/phoneFormatter';
-import { buildApiUrl } from "../../config/api";
+import { buildApiUrl, buildSSEUrl } from "../../config/api";
 
 interface Customer {
   id: number;
@@ -307,12 +307,15 @@ export function StaffDashboard() {
 
     const connectSSE = () => {
       try {
-        eventSource = new EventSource(buildApiUrl("/api/staff/events"), {
+        const sseUrl = buildSSEUrl("/api/staff/events");
+        console.log('🔗 Attempting SSE connection to:', sseUrl);
+        
+        eventSource = new EventSource(sseUrl, {
           withCredentials: true
         });
 
         eventSource.onopen = () => {
-          console.log('SSE connection established');
+          console.log('✅ SSE connection established successfully');
         };
 
         eventSource.onmessage = (event) => {
@@ -353,11 +356,14 @@ export function StaffDashboard() {
         };
 
         eventSource.onerror = (error) => {
-          console.error('SSE connection error:', error);
+          console.error('❌ SSE connection error:', error);
+          console.log('🔍 Current URL:', window.location.href);
+          console.log('🔍 SSE URL attempted:', buildSSEUrl("/api/staff/events"));
           // Reconnect after a delay
           setTimeout(() => {
             if (eventSource) {
               eventSource.close();
+              console.log('🔄 Attempting SSE reconnection...');
               connectSSE();
             }
           }, 5000);

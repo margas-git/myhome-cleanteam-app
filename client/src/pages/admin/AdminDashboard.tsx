@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AdminLayout } from "../../components/AdminLayout";
 import { formatAddress } from "../../utils/addressFormatter";
 import { AdminDashboardMap } from "../../components/AdminDashboardMap";
-import { buildApiUrl } from "../../config/api";
+import { buildApiUrl, buildSSEUrl } from "../../config/api";
 
 interface DashboardStats {
   activeCleans: number;
@@ -265,7 +265,7 @@ export function AdminDashboard() {
         }
 
         // Create new SSE connection
-        eventSource = new EventSource(buildApiUrl("/api/admin/dashboard/events"), {
+        eventSource = new EventSource(buildSSEUrl("/api/admin/dashboard/events"), {
           withCredentials: true
         });
 
