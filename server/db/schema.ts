@@ -67,6 +67,7 @@ export const customers = pgTable("customers", {
   averageWageRatio: integer("average_wage_ratio"), // Average wage ratio percentage for this customer
   isFriendsFamily: boolean("is_friends_family").default(false), // Whether this is a friends & family customer
   friendsFamilyMinutes: integer("friends_family_minutes"), // Allocated minutes for friends & family customers
+  createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
