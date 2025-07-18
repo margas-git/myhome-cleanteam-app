@@ -61,6 +61,10 @@ export function TeamManagement() {
     color: "#3B82F6"
   });
   
+  // Global date picker for historical view
+  const [viewDate, setViewDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isHistoricalView, setIsHistoricalView] = useState(false);
+  
   // Temporal team membership state
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
@@ -73,9 +77,7 @@ export function TeamManagement() {
   const [removeMemberData, setRemoveMemberData] = useState({
     endDate: new Date().toISOString().split('T')[0]
   });
-  // Add date picker for historical view
-  const [viewDate, setViewDate] = useState(new Date().toISOString().split('T')[0]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
 
   const colorOptions = [
     { value: "#3B82F6", name: "Blue" },
@@ -89,45 +91,21 @@ export function TeamManagement() {
   ];
 
   useEffect(() => {
-    fetchTeams();
+    fetchTeams(viewDate);
     fetchStaff();
-  }, []);
+  }, [viewDate]);
 
-  const fetchTeams = async () => {
+  const fetchTeams = async (date?: string) => {
     try {
-      const response = await fetch(buildApiUrl("/api/admin/teams"), {
+      const targetDate = date || new Date().toISOString().split('T')[0];
+      const response = await fetch(buildApiUrl(`/api/admin/teams?date=${targetDate}`), {
         credentials: "include"
       });
       
       if (response.ok) {
         const data = await response.json();
-        const teamsWithMembers = await Promise.all(
-          data.data.map(async (team: Team) => {
-            try {
-              // Fetch current team members for each team
-              const membersResponse = await fetch(buildApiUrl(`/api/admin/teams/${team.id}/members/${new Date().toISOString().split('T')[0]}`), {
-                credentials: "include"
-              });
-              
-              if (membersResponse.ok) {
-                const membersData = await membersResponse.json();
-                return {
-                  ...team,
-                  members: membersData.data.members || []
-                };
-              }
-            } catch (error) {
-              console.error(`Failed to fetch members for team ${team.id}:`, error);
-            }
-            
-            return {
-              ...team,
-              members: []
-            };
-          })
-        );
-        
-        setTeams(teamsWithMembers);
+        // The backend now includes members in the main response, so no need for individual fetches
+        setTeams(data.data);
       }
     } catch (error) {
       console.error("Failed to fetch teams:", error);
@@ -187,49 +165,14 @@ export function TeamManagement() {
   };
 
   const handleEditTeam = async (team: Team) => {
-    try {
-      // Fetch team details with members
-      const response = await fetch(buildApiUrl(`/api/admin/teams/${team.id}`), {
-        credentials: "include"
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const teamWithMembers = data.data;
-        setEditingTeam(teamWithMembers);
-        setEditTeam({
-          name: teamWithMembers.name,
-          color: teamWithMembers.colorHex
-        });
-        // Fetch team members for current date
-        await fetchTeamMembers(team.id, viewDate);
-      }
-    } catch (error) {
-      console.error("Failed to fetch team details:", error);
-      // Fallback to original team data
-      setEditingTeam(team);
-      setEditTeam({
-        name: team.name,
-        color: team.colorHex
-      });
-    }
+    setEditingTeam(team);
+    setEditTeam({
+      name: team.name,
+      color: team.colorHex
+    });
   };
 
-  const fetchTeamMembers = async (teamId: number, date: string) => {
-    try {
-      const response = await fetch(buildApiUrl(`/api/admin/teams/${teamId}/members/${date}`), {
-        credentials: "include"
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setTeamMembers(data.data.members || []);
-      }
-    } catch (error) {
-      console.error("Failed to fetch team members:", error);
-      setTeamMembers([]);
-    }
-  };
+
 
   const handleUpdateTeam = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -396,9 +339,7 @@ export function TeamManagement() {
 
   const handleDateChange = async (newDate: string) => {
     setViewDate(newDate);
-    if (editingTeam) {
-      await fetchTeamMembers(editingTeam.id, newDate);
-    }
+    setIsHistoricalView(newDate !== new Date().toISOString().split('T')[0]);
   };
 
   const formatDate = (dateString: string) => {
@@ -425,546 +366,575 @@ export function TeamManagement() {
             Team Management
           </h1>
           <p className="mt-2 text-gray-600">
-            Create and manage cleaning teams with temporal membership tracking. Click "Edit Team" to view historical composition and manage team members with start/end dates.
+            Create and manage cleaning teams with temporal membership tracking. Use the date picker above to view historical team compositions.
           </p>
         </div>
 
-        <div className="flex justify-between items-center mb-6">
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            {showArchived ? (
-              <>
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Show Active
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                </svg>
-                Show Archived
-              </>
-            )}
-          </button>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            Add Team
-          </button>
-        </div>
-
-        {/* Team List */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {teams.filter(team => showArchived ? !team.active : team.active).map((team) => (
-            <div key={team.id} className="bg-white rounded-lg shadow p-6 relative">
-              {/* Edit button in top right */}
-              <button 
-                onClick={() => handleEditTeam(team)}
-                className="absolute top-6 right-6 inline-flex items-center p-2 border border-gray-300 rounded text-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                title="Edit Team"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-
-              <div className="flex items-center mb-4">
-                <div 
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium"
-                  style={{ backgroundColor: team.colorHex }}
-                >
-                  {team.name.charAt(0)}
-                </div>
-                <h3 className="ml-3 text-lg font-medium text-gray-900">
-                  {team.name}
-                </h3>
-              </div>
-
-              {/* Active badge separate from header - only show for archived teams */}
-              {!team.active && (
-                <div className="mb-4">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    Archived
-                  </span>
-                </div>
-              )}
-              
-              <div className="text-sm text-gray-500 mb-3">
-                {/* Show current team members */}
-                <div className="mb-2 flex items-center">
-                  <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  <span className="font-medium">Current Team Members:</span>
-                </div>
-                {team.members && team.members.length > 0 ? (
-                  <div className="space-y-1 ml-6 mb-5">
-                    {team.members.map((member) => (
-                      <div key={member.id} className="text-gray-600">
-                        {member.firstName} {member.lastName}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-gray-400 italic ml-6 mb-5">No current members</div>
-                )}
-                <div className="text-gray-400 italic ml-6 mb-2 text-xs">
-                  Click "Edit Team" to view historical composition
-                </div>
-                
-                {/* Team Performance Metrics */}
-                <div className="mt-3 space-y-2">
-                  {/* Efficiency */}
-                  <div className="p-2 bg-gray-50 border border-gray-200 rounded">
-                    <div className="text-gray-800 font-medium text-sm">Average Efficiency:</div>
-                    <div className={`text-sm font-semibold ${
-                      team.averageEfficiency && team.averageEfficiency >= 100 ? 'text-green-600' : 
-                      team.averageEfficiency && team.averageEfficiency >= 80 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
-                      {team.averageEfficiency ? `${team.averageEfficiency}%` : 'N/A'}
-                    </div>
-                  </div>
-
-                  {/* Wage Ratio */}
-                  <div className="p-2 bg-gray-50 border border-gray-200 rounded">
-                    <div className="text-gray-800 font-medium text-sm">Average Wage Ratio:</div>
-                    <div className={`text-sm font-semibold ${
-                      team.averageWageRatio && team.averageWageRatio <= 30 ? 'text-green-600' : 
-                      team.averageWageRatio && team.averageWageRatio <= 40 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
-                      {team.averageWageRatio ? `${team.averageWageRatio}%` : 'N/A'}
-                    </div>
-                  </div>
-
-                  {/* Revenue and Jobs */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 bg-gray-50 border border-gray-200 rounded">
-                      <div className="text-gray-800 font-medium text-xs">Total Revenue:</div>
-                      <div className="text-sm font-semibold text-green-600">
-                        ${team.totalRevenue ? team.totalRevenue.toLocaleString() : '0'}
-                      </div>
-                    </div>
-                    <div className="p-2 bg-gray-50 border border-gray-200 rounded">
-                      <div className="text-gray-800 font-medium text-xs">Completed Jobs:</div>
-                      <div className="text-sm font-semibold text-blue-600">
-                        {team.completedJobsCount || 0}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {team.activeJob && (
-                  <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded">
-                    <div className="text-blue-800 font-medium">Currently cleaning:</div>
-                    <div className="text-blue-700">{team.activeJob.customerName}</div>
-                    <div className="text-blue-600 text-xs">{formatAddress(team.activeJob.customerAddress)}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {teams.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-gray-500">No teams found. Create your first team to get started.</div>
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold text-gray-900">Team Management</h1>
           </div>
-        )}
-      </div>
 
-      {/* Add Team Modal */}
-      {showAddForm && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
-            <button
-              onClick={() => setShowAddForm(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Add New Team
-            </h3>
-            
-            <form onSubmit={handleAddTeam} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Team Name *
+          {/* Global Date Picker for Historical View */}
+          <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <label className="text-sm font-medium text-gray-700">
+                  View Teams As Of:
                 </label>
                 <input
-                  type="text"
-                  required
-                  value={newTeam.name}
-                  onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                  placeholder="e.g., Cleaning Team A"
+                  type="date"
+                  value={viewDate}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+                {isHistoricalView && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    Historical View
+                  </span>
+                )}
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Team Color
-                </label>
-                <div className="mt-2 grid grid-cols-4 gap-2">
-                  {colorOptions.map((color) => (
-                    <button
-                      key={color.value}
-                      type="button"
-                      onClick={() => setNewTeam({ ...newTeam, color: color.value })}
-                      className={`w-full h-10 rounded-md border-2 ${
-                        newTeam.color === color.value ? 'border-gray-900' : 'border-gray-200'
-                      }`}
-                      style={{ backgroundColor: color.value }}
-                      title={color.name}
-                    />
-                  ))}
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Description
-                </label>
-                <textarea
-                  value={newTeam.description}
-                  onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                  rows={3}
-                  placeholder="Optional description of the team's responsibilities..."
-                />
-              </div>
-              
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Add Team
-                </button>
-              </div>
-            </form>
+              <button
+                onClick={() => handleDateChange(new Date().toISOString().split('T')[0])}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Today
+              </button>
+            </div>
+            {isHistoricalView && (
+              <p className="mt-2 text-sm text-gray-600">
+                Showing team composition and performance metrics as of {formatDate(viewDate)}. 
+                Team members shown are those who were active on this date.
+              </p>
+            )}
           </div>
-        </div>
-      )}
 
-      {/* Edit Team Form Modal */}
-      {editingTeam && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+          {/* Team Controls */}
+          <div className="flex justify-between items-center mb-6">
             <button
-              onClick={() => setEditingTeam(null)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              onClick={() => setShowArchived(!showArchived)}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              {showArchived ? (
+                <>
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Show Active
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                  </svg>
+                  Show Archived
+                </>
+              )}
             </button>
-            <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Edit Team</h3>
-              <form onSubmit={handleUpdateTeam}>
-                <div className="space-y-4">
-                  <div className="flex items-end space-x-3">
-                    <div className="flex-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={editTeam.name}
-                        onChange={(e) => setEditTeam({...editTeam, name: e.target.value})}
-                        className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <div className="w-12">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
-                      <input
-                        type="color"
-                        required
-                        value={editTeam.color}
-                        onChange={(e) => setEditTeam({...editTeam, color: e.target.value})}
-                        className="block w-full h-[42px] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
-                        style={{ backgroundColor: editTeam.color }}
-                        title="Team Color"
-                      />
-                    </div>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Add Team
+            </button>
+          </div>
+
+          {/* Team List */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {teams.filter(team => showArchived ? !team.active : team.active).map((team) => (
+              <div key={team.id} className="bg-white rounded-lg shadow p-6 relative">
+                {/* Edit button in top right */}
+                <button 
+                  onClick={() => handleEditTeam(team)}
+                  className="absolute top-6 right-6 inline-flex items-center p-2 border border-gray-300 rounded text-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  title="Edit Team"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+
+                <div className="flex items-center mb-4">
+                  <div 
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium"
+                    style={{ backgroundColor: team.colorHex }}
+                  >
+                    {team.name.charAt(0)}
                   </div>
+                  <h3 className="ml-3 text-lg font-medium text-gray-900">
+                    {team.name}
+                  </h3>
                 </div>
 
-                {/* Staff Management Section */}
-                <div className="mt-6 border-t pt-4">
-                  {/* Date Picker for Historical View */}
+                {/* Active badge separate from header - only show for archived teams */}
+                {!team.active && (
                   <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">View Team Composition On:</label>
-                    <input
-                      type="date"
-                      value={viewDate}
-                      onChange={(e) => handleDateChange(e.target.value)}
-                      className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    />
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Archived
+                    </span>
                   </div>
-
-                  {/* Team Members for Selected Date */}
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Team Members (as of {formatDate(viewDate)}):</label>
-                    {teamMembers && teamMembers.length > 0 ? (
-                      <div className="space-y-2">
-                        {teamMembers.map((member) => (
-                          <div key={`${member.userId}-${member.startDate}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                <span className="text-sm font-medium text-blue-700">
-                                  {member.firstName.charAt(0)}{member.lastName.charAt(0)}
-                                </span>
-                              </div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  {member.firstName} {member.lastName}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {member.role} • {formatDate(member.startDate)} - {member.endDate ? formatDate(member.endDate) : 'Active'}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => openRemoveMemberModal(member)}
-                              className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"
-                              title="Remove member"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-gray-500 italic p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        No members assigned on this date
-                      </div>
-                    )}
+                )}
+                
+                <div className="text-sm text-gray-500 mb-3">
+                  {/* Show current team members */}
+                  <div className="mb-2 flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                    <span className="font-medium">Current Team Members:</span>
                   </div>
+                  {team.members && team.members.length > 0 ? (
+                    <div className="space-y-1 ml-6 mb-5">
+                      {team.members.map((member) => (
+                        <div key={member.id} className="text-gray-600">
+                          {member.firstName} {member.lastName}
+                        </div>
+                      ))}
+                    </div>
+                                  ) : (
+                  <div className="text-gray-400 italic ml-6 mb-5">No current members</div>
+                )}
+                  
+                  {/* Team Performance Metrics */}
+                  <div className="mt-3 space-y-2">
+                    {/* Efficiency */}
+                    <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                      <div className="text-gray-800 font-medium text-sm">Average Efficiency:</div>
+                      <div className={`text-sm font-semibold ${
+                        team.averageEfficiency && team.averageEfficiency >= 100 ? 'text-green-600' : 
+                        team.averageEfficiency && team.averageEfficiency >= 80 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {team.averageEfficiency ? `${team.averageEfficiency}%` : 'N/A'}
+                      </div>
+                    </div>
 
-                  {/* Add New Member Button */}
-                  <div className="space-y-2">
-                    <button
-                      type="button"
-                      onClick={() => openAddMemberModal(editingTeam.id)}
-                      className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Add Member (with start date)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {/* TODO: Open historical view modal */}}
-                      className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-600 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      View Historical Changes
-                    </button>
+                    {/* Wage Ratio */}
+                    <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                      <div className="text-gray-800 font-medium text-sm">Average Wage Ratio:</div>
+                      <div className={`text-sm font-semibold ${
+                        team.averageWageRatio && team.averageWageRatio <= 30 ? 'text-green-600' : 
+                        team.averageWageRatio && team.averageWageRatio <= 40 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {team.averageWageRatio ? `${team.averageWageRatio}%` : 'N/A'}
+                      </div>
+                    </div>
+
+                    {/* Revenue and Jobs */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                        <div className="text-gray-800 font-medium text-xs">Total Revenue:</div>
+                        <div className="text-sm font-semibold text-green-600">
+                          ${team.totalRevenue ? team.totalRevenue.toLocaleString() : '0'}
+                        </div>
+                      </div>
+                      <div className="p-2 bg-gray-50 border border-gray-200 rounded">
+                        <div className="text-gray-800 font-medium text-xs">Completed Jobs:</div>
+                        <div className="text-sm font-semibold text-blue-600">
+                          {team.completedJobsCount || 0}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {team.activeJob && (
+                    <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded">
+                      <div className="text-blue-800 font-medium">Currently cleaning:</div>
+                      <div className="text-blue-700">{team.activeJob.customerName}</div>
+                      <div className="text-blue-600 text-xs">{formatAddress(team.activeJob.customerAddress)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {teams.length === 0 && (
+            <div className="text-center py-12">
+              <div className="text-gray-500">No teams found. Create your first team to get started.</div>
+            </div>
+          )}
+        </div>
+
+        {/* Add Team Modal */}
+        {showAddForm && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Add New Team
+              </h3>
+              
+              <form onSubmit={handleAddTeam} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Team Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newTeam.name}
+                    onChange={(e) => setNewTeam({ ...newTeam, name: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="e.g., Cleaning Team A"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Team Color
+                  </label>
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {colorOptions.map((color) => (
+                      <button
+                        key={color.value}
+                        type="button"
+                        onClick={() => setNewTeam({ ...newTeam, color: color.value })}
+                        className={`w-full h-10 rounded-md border-2 ${
+                          newTeam.color === color.value ? 'border-gray-900' : 'border-gray-200'
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        title={color.name}
+                      />
+                    ))}
                   </div>
                 </div>
-
-                <div className="flex justify-between items-center pt-4">
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Description
+                  </label>
+                  <textarea
+                    value={newTeam.description}
+                    onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                    rows={3}
+                    placeholder="Optional description of the team's responsibilities..."
+                  />
+                </div>
+                
+                <div className="flex justify-end space-x-3 pt-4">
                   <button
                     type="button"
-                    onClick={() => handleArchiveTeam(editingTeam.id, editingTeam.active)}
-                    className={`inline-flex items-center h-[42px] px-4 border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                      editingTeam.active 
-                        ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:ring-red-500' 
-                        : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:ring-green-500'
-                    }`}
-                    title={editingTeam.active ? "Archive Team" : "Restore Team"}
+                    onClick={() => setShowAddForm(false)}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
-                    {editingTeam.active ? (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                      </svg>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    )}
+                    Cancel
                   </button>
-                  <div className="flex space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => setEditingTeam(null)}
-                      className="inline-flex items-center h-[42px] px-4 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      title="Cancel"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="inline-flex items-center h-[42px] px-4 border border-transparent rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                      title="Save Changes"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Add Team
+                  </button>
                 </div>
               </form>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Add Member Modal */}
-      {showAddMemberModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
-            <button
-              onClick={() => setShowAddMemberModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Add Team Member
-            </h3>
-            
-            <form onSubmit={handleAddTeamMember} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Staff Member *
-                </label>
-                <select
-                  required
-                  value={newMemberData.userId}
-                  onChange={(e) => setNewMemberData({ ...newMemberData, userId: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                >
-                  <option value="">Select staff member...</option>
-                  {allStaff
-                    .filter(staff => staff.active)
-                    .map((staff) => (
-                      <option key={staff.id} value={staff.id}>
-                        {staff.firstName} {staff.lastName}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Start Date *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={newMemberData.startDate}
-                  onChange={(e) => setNewMemberData({ ...newMemberData, startDate: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                />
-              </div>
-              
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowAddMemberModal(false)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Add Member
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        {/* Edit Team Form Modal */}
+        {editingTeam && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+              <button
+                onClick={() => setEditingTeam(null)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <div className="mt-3">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Edit Team</h3>
+                <form onSubmit={handleUpdateTeam}>
+                  <div className="space-y-4">
+                    <div className="flex items-end space-x-3">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={editTeam.name}
+                          onChange={(e) => setEditTeam({...editTeam, name: e.target.value})}
+                          className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      </div>
+                      <div className="w-12">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">&nbsp;</label>
+                        <input
+                          type="color"
+                          required
+                          value={editTeam.color}
+                          onChange={(e) => setEditTeam({...editTeam, color: e.target.value})}
+                          className="block w-full h-[42px] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 cursor-pointer"
+                          style={{ backgroundColor: editTeam.color }}
+                          title="Team Color"
+                        />
+                      </div>
+                    </div>
+                  </div>
 
-      {/* Remove Member Modal */}
-      {showRemoveMemberModal && memberToRemove && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
-            <button
-              onClick={() => setShowRemoveMemberModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Remove Team Member
-            </h3>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-600">
-                Remove <strong>{memberToRemove.firstName} {memberToRemove.lastName}</strong> from the team?
-              </p>
+                  {/* Staff Management Section */}
+                  <div className="mt-6 border-t pt-4">
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Current Team Members:</label>
+                      {editingTeam.members && editingTeam.members.length > 0 ? (
+                        <div className="space-y-2">
+                          {editingTeam.members.map((member) => (
+                            <div key={member.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <span className="text-sm font-medium text-blue-700">
+                                    {member.firstName.charAt(0)}{member.lastName.charAt(0)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {member.firstName} {member.lastName}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {member.role}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => openRemoveMemberModal({
+                                  userId: member.id,
+                                  teamId: editingTeam.id,
+                                  startDate: new Date().toISOString().split('T')[0],
+                                  endDate: null,
+                                  firstName: member.firstName,
+                                  lastName: member.lastName,
+                                  email: member.email,
+                                  role: member.role
+                                })}
+                                className="text-red-600 hover:text-red-800 hover:bg-red-50 p-1 rounded transition-colors"
+                                title="Remove member"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500 italic p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          No current members
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Add New Member Button */}
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => openAddMemberModal(editingTeam.id)}
+                        className="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Add Member
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-4">
+                    <button
+                      type="button"
+                      onClick={() => handleArchiveTeam(editingTeam.id, editingTeam.active)}
+                      className={`inline-flex items-center h-[42px] px-4 border rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                        editingTeam.active 
+                          ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100 focus:ring-red-500' 
+                          : 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100 focus:ring-green-500'
+                      }`}
+                      title={editingTeam.active ? "Archive Team" : "Restore Team"}
+                    >
+                      {editingTeam.active ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      )}
+                    </button>
+                    <div className="flex space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => setEditingTeam(null)}
+                        className="inline-flex items-center h-[42px] px-4 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        title="Cancel"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="inline-flex items-center h-[42px] px-4 border border-transparent rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                        title="Save Changes"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
             </div>
-            
-            <form onSubmit={handleRemoveTeamMember} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  End Date *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={removeMemberData.endDate}
-                  onChange={(e) => setRemoveMemberData({ ...removeMemberData, endDate: e.target.value })}
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  The member will be removed from the team on this date.
+          </div>
+        )}
+
+        {/* Add Member Modal */}
+        {showAddMemberModal && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
+              <button
+                onClick={() => setShowAddMemberModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Add Team Member
+              </h3>
+              
+              <form onSubmit={handleAddTeamMember} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Staff Member *
+                  </label>
+                  <select
+                    required
+                    value={newMemberData.userId}
+                    onChange={(e) => setNewMemberData({ ...newMemberData, userId: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value="">Select staff member...</option>
+                    {allStaff
+                      .filter(staff => staff.active)
+                      .map((staff) => (
+                        <option key={staff.id} value={staff.id}>
+                          {staff.firstName} {staff.lastName}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Start Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newMemberData.startDate}
+                    onChange={(e) => setNewMemberData({ ...newMemberData, startDate: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddMemberModal(false)}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Add Member
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Remove Member Modal */}
+        {showRemoveMemberModal && memberToRemove && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md relative">
+              <button
+                onClick={() => setShowRemoveMemberModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Remove Team Member
+              </h3>
+              
+              <div className="mb-4">
+                <p className="text-sm text-gray-600">
+                  Remove <strong>{memberToRemove.firstName} {memberToRemove.lastName}</strong> from the team?
                 </p>
               </div>
               
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowRemoveMemberModal(false)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                >
-                  Remove Member
-                </button>
-              </div>
-            </form>
+              <form onSubmit={handleRemoveTeamMember} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    End Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={removeMemberData.endDate}
+                    onChange={(e) => setRemoveMemberData({ ...removeMemberData, endDate: e.target.value })}
+                    className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    The member will be removed from the team on this date.
+                  </p>
+                </div>
+                
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowRemoveMemberModal(false)}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    Remove Member
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </AdminLayout>
   );
 } 

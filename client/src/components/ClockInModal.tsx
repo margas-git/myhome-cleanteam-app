@@ -246,15 +246,19 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
     setError("");
 
     try {
+      const requestBody = {
+        teamId: typeof selectedTeam === 'object' && selectedTeam !== null ? (selectedTeam as any).id : selectedTeam,
+        customerId: selectedCustomer && typeof selectedCustomer === 'object' ? (selectedCustomer as any).id : selectedCustomer,
+        memberIds: selectedMembers.map(m => typeof m === 'object' && m !== null ? (m as any).id : m)
+      };
+      
+      console.log('🔍 Clock-in request data:', requestBody);
+      
       const response = await fetch(buildApiUrl("/api/staff/time-entries/clock-in"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          teamId: typeof selectedTeam === 'object' && selectedTeam !== null ? (selectedTeam as any).id : selectedTeam,
-          customerId: selectedCustomer && typeof selectedCustomer === 'object' ? (selectedCustomer as any).id : selectedCustomer,
-          memberIds: selectedMembers.map(m => typeof m === 'object' && m !== null ? (m as any).id : m)
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const data = await response.json();
@@ -263,7 +267,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
         onSuccess();
         onClose();
       } else {
-        setError(data.error || "Failed to clock in");
+        setError(data.error || "Failed to start clean");
       }
     } catch (error) {
       setError("Network error occurred");
@@ -332,7 +336,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
 
           {/* Header */}
           <div className="flex flex-col space-y-1.5 text-center sm:text-left">
-            <h2 className="text-lg font-semibold leading-none tracking-tight">Clock In</h2>
+            <h2 className="text-lg font-semibold leading-none tracking-tight">Start Clean</h2>
             <p className="text-sm text-gray-600">Select a customer to start tracking time</p>
           </div>
 
@@ -586,7 +590,7 @@ export function ClockInModal({ customer, isOpen, onClose, onSuccess, allottedMin
               disabled={loading || !selectedTeam || !selectedCustomer}
               className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white hover:bg-blue-700 h-10 px-4 py-2 flex-1"
             >
-              {loading ? "Clocking In..." : "Clock In"}
+                              {loading ? "Starting..." : "Start"}
             </button>
           </div>
         </div>

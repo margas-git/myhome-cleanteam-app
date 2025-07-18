@@ -9,6 +9,54 @@ import { Label } from "../../components/ui/label";
 import { buildApiUrl } from "../../config/api";
 import { useGoogleMaps } from "../../hooks/useGoogleMaps";
 
+// Toast notification types
+interface Toast {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
+  duration?: number;
+}
+
+// Toast component
+function Toast({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onRemove(toast.id);
+    }, toast.duration || 5000);
+
+    return () => clearTimeout(timer);
+  }, [toast.id, toast.duration, onRemove]);
+
+  const getToastStyles = () => {
+    switch (toast.type) {
+      case 'success':
+        return 'bg-green-500 text-white';
+      case 'error':
+        return 'bg-red-500 text-white';
+      case 'info':
+        return 'bg-blue-500 text-white';
+      default:
+        return 'bg-gray-500 text-white';
+    }
+  };
+
+  return (
+    <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm ${getToastStyles()}`}>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">{toast.message}</span>
+        <button
+          onClick={() => onRemove(toast.id)}
+          className="ml-4 text-white hover:text-gray-200 focus:outline-none"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface Customer {
   id: number;
   name: string;
@@ -71,6 +119,7 @@ export function CustomerManagement() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
+  const [calculatingMetrics, setCalculatingMetrics] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [newCustomer, setNewCustomer] = useState({
     name: "",
@@ -95,17 +144,40 @@ export function CustomerManagement() {
     friendsFamilyMinutes: ""
   });
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [customersPerPage] = useState(20);
+  const [searchTerm, setSearchTerm] = useState("");
+
   // Add Google Maps hook at component level
   const { isLoaded: isGoogleLoaded } = useGoogleMaps();
+
+  // Toast state
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   // Helper function to format clean frequency for display
   const formatCleanFrequency = (frequency: string): string => {
     return frequency.charAt(0).toUpperCase() + frequency.slice(1).replace('-', ' ');
   };
 
+  // Toast helper functions
+  const addToast = (type: 'success' | 'error' | 'info', message: string, duration?: number) => {
+    const id = Date.now().toString();
+    setToasts(prev => [...prev, { id, type, message, duration }]);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
+
   useEffect(() => {
     fetchCustomers();
   }, []);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [showArchived, searchTerm]);
 
   const fetchCustomers = async () => {
     try {
@@ -289,6 +361,7 @@ export function CustomerManagement() {
   };
 
   const handleCalculateMetrics = async () => {
+    setCalculatingMetrics(true);
     try {
       const response = await fetch(buildApiUrl("/api/admin/customers/calculate-metrics"), {
         method: "POST",
@@ -296,20 +369,50 @@ export function CustomerManagement() {
       });
       if (response.ok) {
         await fetchCustomers();
-        alert("Customer metrics updated!");
+        addToast('success', 'Customer metrics updated successfully!', 4000);
       } else {
-        alert("Failed to calculate metrics");
+        addToast('error', 'Failed to calculate metrics. Please try again.', 5000);
       }
     } catch (error) {
-      alert("Error calculating metrics");
+      addToast('error', 'Error calculating metrics. Please check your connection.', 5000);
+    } finally {
+      setCalculatingMetrics(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading...</div>
-      </div>
+      <AdminLayout>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="mb-8">
+            <div className="h-8 bg-gray-200 rounded animate-pulse mb-2"></div>
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>
+          </div>
+          
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex space-x-3">
+              <div className="h-10 w-24 bg-gray-200 rounded animate-pulse"></div>
+              <div className="h-10 w-32 bg-gray-200 rounded animate-pulse"></div>
+            </div>
+            <div className="h-10 w-32 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {Array.from({ length: 12 }, (_, i) => (
+              <div key={i} className="bg-white rounded-lg shadow-md p-6">
+                <div className="h-6 bg-gray-200 rounded animate-pulse mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+                <div className="h-4 bg-gray-200 rounded animate-pulse mb-4"></div>
+                <div className="flex space-x-2">
+                  <div className="h-6 w-16 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-6 w-20 bg-gray-200 rounded animate-pulse"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </AdminLayout>
     );
   }
 
@@ -347,34 +450,22 @@ export function CustomerManagement() {
                 </>
               )}
             </button>
-                      <button
-            onClick={handleCalculateMetrics}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Calculate Metrics
-          </button>
-          <button
-            onClick={async () => {
-              console.log('🧪 Testing geocoding...');
-              if (isGoogleLoaded) {
-                const testAddress = "123 Collins Street, Melbourne";
-                const coords = await geocodeAddress(testAddress);
-                if (coords) {
-                  alert(`Test successful! Coordinates: ${coords.latitude}, ${coords.longitude}`);
-                } else {
-                  alert('Test failed - geocoding returned null');
-                }
-              } else {
-                alert('Google Maps not loaded');
-              }
-            }}
-            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            🧪 Test Geocoding
-          </button>
+            <button
+              onClick={handleCalculateMetrics}
+              disabled={calculatingMetrics}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg 
+                className={`w-4 h-4 mr-2 ${calculatingMetrics ? 'animate-spin' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {calculatingMetrics ? 'Calculating...' : 'Calculate Metrics'}
+            </button>
+
           </div>
           <button
             onClick={() => setShowAddForm(true)}
@@ -387,10 +478,37 @@ export function CustomerManagement() {
           </button>
         </div>
 
+        {/* Search and Pagination Controls */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex-1 max-w-md">
+              <input
+                type="text"
+                placeholder="Search customers..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex items-center space-x-2 text-sm text-gray-600">
+              <span>
+                Showing {Math.min((currentPage - 1) * customersPerPage + 1, customers.filter(c => showArchived ? !c.active : c.active).length)} - {Math.min(currentPage * customersPerPage, customers.filter(c => showArchived ? !c.active : c.active).length)} of {customers.filter(c => showArchived ? !c.active : c.active).length} customers
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Customer List */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {customers
             .filter(customer => showArchived ? !customer.active : customer.active)
+            .filter(customer => 
+              searchTerm === "" || 
+              customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              customer.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              (customer.phone && customer.phone.includes(searchTerm))
+            )
+            .slice((currentPage - 1) * customersPerPage, currentPage * customersPerPage)
             .map((customer) => (
               <div key={customer.id} className={`bg-white rounded-lg shadow-md p-6 ${!customer.active ? 'opacity-60' : ''}`}>
                                   <div className="flex justify-between items-start mb-1">
@@ -412,9 +530,13 @@ export function CustomerManagement() {
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                       </svg>
-                      <p className="text-sm text-gray-500">
+                      <a 
+                        href={`tel:${customer.phone.replace(/\s+/g, '')}`}
+                        className="text-sm text-gray-500 hover:text-gray-700 cursor-pointer"
+                        title="Call customer"
+                      >
                         {formatPhoneNumber(customer.phone)}
-                      </p>
+                      </a>
                     </div>
                   )}
                   <div className="flex items-center space-x-2 mb-2">
@@ -476,6 +598,66 @@ export function CustomerManagement() {
               </div>
             ))}
         </div>
+
+        {/* Pagination */}
+        {customers.filter(c => showArchived ? !c.active : c.active).filter(c => 
+          searchTerm === "" || 
+          c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (c.phone && c.phone.includes(searchTerm))
+        ).length > customersPerPage && (
+          <div className="mt-8 flex justify-center">
+            <nav className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              
+              {Array.from({ length: Math.ceil(customers.filter(c => showArchived ? !c.active : c.active).filter(c => 
+                searchTerm === "" || 
+                c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (c.phone && c.phone.includes(searchTerm))
+              ).length / customersPerPage) }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-2 text-sm font-medium rounded-md ${
+                    currentPage === page
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-500 bg-white border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              
+              <button
+                onClick={() => setCurrentPage(Math.min(
+                  Math.ceil(customers.filter(c => showArchived ? !c.active : c.active).filter(c => 
+                    searchTerm === "" || 
+                    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (c.phone && c.phone.includes(searchTerm))
+                  ).length / customersPerPage),
+                  currentPage + 1
+                ))}
+                disabled={currentPage >= Math.ceil(customers.filter(c => showArchived ? !c.active : c.active).filter(c => 
+                  searchTerm === "" || 
+                  c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  c.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (c.phone && c.phone.includes(searchTerm))
+                ).length / customersPerPage)}
+                className="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </nav>
+          </div>
+        )}
 
         {/* Add Customer Form Modal */}
         {showAddForm && (
@@ -857,6 +1039,11 @@ export function CustomerManagement() {
             </div>
           </div>
         )}
+
+        {/* Toast Notifications */}
+        {toasts.map((toast) => (
+          <Toast key={toast.id} toast={toast} onRemove={removeToast} />
+        ))}
       </div>
     </AdminLayout>
   );

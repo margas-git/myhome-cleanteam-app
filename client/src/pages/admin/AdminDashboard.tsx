@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AdminLayout } from "../../components/AdminLayout";
 import { formatAddress } from "../../utils/addressFormatter";
 import { AdminDashboardMap } from "../../components/AdminDashboardMap";
-import { HistoricalTeamView } from "../../components/HistoricalTeamView";
 import { buildApiUrl } from "../../config/api";
 
 interface DashboardStats {
@@ -55,9 +54,10 @@ export function AdminDashboard() {
   const [appliedDateFilter, setAppliedDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('custom');
   const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
   
-  // Historical team view state
-  const [showHistoricalTeamView, setShowHistoricalTeamView] = useState(false);
-  const [selectedHistoricalDate, setSelectedHistoricalDate] = useState(new Date().toISOString().split('T')[0]);
+  // SSE connection state
+  const [sseConnected, setSseConnected] = useState(false);
+  
+
 
   // Refs for the datetime inputs
   const clockInRef = useRef<HTMLInputElement>(null);
@@ -74,6 +74,18 @@ export function AdminDashboard() {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  // Helper function to convert local date string to UTC Date object
+  const localDateToUTC = (dateString: string, timeString: string = '00:00:00') => {
+    const localDate = new Date(dateString + 'T' + timeString);
+    return new Date(localDate.getTime() - (localDate.getTimezoneOffset() * 60000));
+  };
+
+  // Helper function to format UTC date in local timezone for display
+  const formatUTCDateAsLocal = (utcDate: Date) => {
+    const localDate = new Date(utcDate.getTime() + (utcDate.getTimezoneOffset() * 60000));
+    return `${localDate.getDate().toString().padStart(2, '0')}/${(localDate.getMonth()+1).toString().padStart(2, '0')} ${localDate.getHours().toString().padStart(2, '0')}:${localDate.getMinutes().toString().padStart(2, '0')}`;
   };
 
   // Helper function to get date range based on filter
@@ -111,7 +123,16 @@ export function AdminDashboard() {
           end: new Date(lastSunday.getTime() + 24 * 60 * 60 * 1000)
         };
       case 'custom':
-        return { start: customRange.start ? new Date(customRange.start) : today, end: customRange.end ? new Date(new Date(customRange.end).getTime() + 24 * 60 * 60 * 1000) : today };
+        if (customRange.start && customRange.end) {
+          // Convert local dates to UTC for consistent timezone handling
+          const utcStart = localDateToUTC(customRange.start, '00:00:00');
+          const utcEnd = localDateToUTC(customRange.end, '23:59:59.999');
+          
+          return { start: utcStart, end: new Date(utcEnd.getTime() + 1) }; // Add 1ms to make it exclusive
+        } else {
+          // Fallback to today if no custom range is set
+          return { start: today, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) };
+        }
     }
   };
 
@@ -232,29 +253,94 @@ export function AdminDashboard() {
     fetchDashboardData(true);
   }, [appliedDateFilter, appliedCustomRange, fetchDashboardData]);
 
-  // Set up polling for real-time updates (temporary replacement for SSE)
+  // Set up SSE for real-time updates
   useEffect(() => {
-    let pollInterval: NodeJS.Timeout | null = null;
+    let eventSource: EventSource | null = null;
 
-    const startPolling = () => {
-      // Poll every 10 seconds for updates
-      pollInterval = setInterval(() => {
-        fetchDashboardData();
-      }, 10000);
+    const connectSSE = () => {
+      try {
+        // Close existing connection if any
+        if (eventSource) {
+          eventSource.close();
+        }
+
+        // Create new SSE connection
+        eventSource = new EventSource(buildApiUrl("/api/admin/dashboard/events"), {
+          withCredentials: true
+        });
+
+        eventSource.onopen = () => {
+          console.log("SSE connection established");
+          setSseConnected(true);
+        };
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            switch (data.type) {
+              case 'connected':
+                console.log("SSE connected:", data.message);
+                break;
+              case 'heartbeat':
+                // Optional: handle heartbeat for connection monitoring
+                break;
+              case 'staff_clocked_in':
+              case 'staff_clocked_out':
+              case 'dashboard_update':
+                // Refresh dashboard data when real-time events occur
+                console.log("Real-time update received:", data.type);
+                fetchDashboardData();
+                break;
+              default:
+                console.log("Unknown SSE event type:", data.type);
+            }
+          } catch (error) {
+            console.error("Error parsing SSE message:", error);
+          }
+        };
+
+        eventSource.onerror = (error) => {
+          console.error("SSE connection error:", error);
+          setSseConnected(false);
+          // Attempt to reconnect after a delay
+          setTimeout(() => {
+            if (eventSource) {
+              eventSource.close();
+              connectSSE();
+            }
+          }, 5000);
+        };
+
+      } catch (error) {
+        console.error("Failed to establish SSE connection:", error);
+        // Fallback to polling if SSE fails
+        console.log("Falling back to polling...");
+        setSseConnected(false);
+        const pollInterval = setInterval(() => {
+          fetchDashboardData();
+        }, 30000); // Poll every 30 seconds as fallback
+
+        return () => {
+          clearInterval(pollInterval);
+        };
+      }
     };
 
-    startPolling();
+    // Start SSE connection
+    connectSSE();
 
     // Cleanup on unmount
     return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
+      if (eventSource) {
+        eventSource.close();
       }
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
       }
+      setSseConnected(false);
     };
-  }, []); // Remove dependencies to prevent reconnections
+  }, []); // Empty dependency array - SSE connection should be established once
 
   const saveCleanTimes = async () => {
     if (!editingClean || !clockInRef.current) return;
@@ -356,6 +442,12 @@ export function AdminDashboard() {
                     <span className="text-xs font-medium">Updating...</span>
                   </div>
                 )}
+                <div className="flex items-center space-x-1 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${sseConnected ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                  <span className={`font-medium ${sseConnected ? 'text-green-600' : 'text-yellow-600'}`}>
+                    {sseConnected ? 'Real-time' : 'Polling'}
+                  </span>
+                </div>
               </div>
               <p className="mt-1 text-sm text-gray-600">
                 Monitor active cleans, view completed jobs, and manage your team.
@@ -369,7 +461,16 @@ export function AdminDashboard() {
                     <label className="text-sm font-medium text-gray-700">Date Range:</label>
                     <select
                       value={dateFilter}
-                      onChange={(e) => setDateFilter(e.target.value as 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom')}
+                      onChange={(e) => {
+                        const newFilter = e.target.value as 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom';
+                        setDateFilter(newFilter);
+                        
+                        // Automatically apply non-custom filters
+                        if (newFilter !== 'custom') {
+                          setAppliedDateFilter(newFilter);
+                          setAppliedCustomRange(customRange); // Keep existing custom range for when switching back
+                        }
+                      }}
                       className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="today">Today</option>
@@ -398,63 +499,31 @@ export function AdminDashboard() {
                     </div>
                   )}
                   
-                  <button
-                    onClick={() => {
-                      setAppliedDateFilter(dateFilter);
-                      setAppliedCustomRange(customRange);
-                    }}
-                    className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                  >
-                    Apply Filter
-                  </button>
+                  {dateFilter === 'custom' && (
+                    <button
+                      onClick={() => {
+                        setAppliedDateFilter(dateFilter);
+                        setAppliedCustomRange(customRange);
+                      }}
+                      className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      Apply Filter
+                    </button>
+                  )}
                 </div>
                 
-                <div className="flex items-center space-x-3">
-                  {/* Historical Team View Button */}
-                  <button
-                    onClick={() => setShowHistoricalTeamView(true)}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    title="View historical team composition"
-                  >
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Historical Teams
-                  </button>
-                  
-                  <button
-                    onClick={() => fetchDashboardData(true)}
-                    disabled={isUpdating}
-                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                  >
-                    {isUpdating ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Refresh
-                      </>
-                    )}
-                  </button>
-                </div>
+
               </div>
             </div>
             {(() => {
               const { start, end } = getDateRange(appliedDateFilter);
-              const format = (d: Date) => `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth()+1).toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-              // Subtract 1 minute from end for display
-              const displayEnd = new Date(end.getTime() - 1 * 60 * 1000);
+              
+              // Show end time as 23:59 for better readability
+              const displayEnd = new Date(end.getTime() - 1);
+              
               return (
                 <div className="text-xs text-gray-500 mt-1">
-                  <strong>Debug:</strong> Showing data from <span>{format(start)}</span> to <span>{format(displayEnd)}</span>
+                  <strong>Debug:</strong> Showing data from <span>{formatUTCDateAsLocal(start)}</span> to <span>{formatUTCDateAsLocal(displayEnd)}</span>
                 </div>
               );
             })()}
@@ -862,13 +931,7 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      {/* Historical Team View Modal */}
-      {showHistoricalTeamView && (
-        <HistoricalTeamView
-          selectedDate={selectedHistoricalDate}
-          onClose={() => setShowHistoricalTeamView(false)}
-        />
-      )}
+
 
       {/* Edit Clean Modal */}
       {editingClean && (
