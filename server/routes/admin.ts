@@ -1218,9 +1218,47 @@ router.get("/cleans/active", async (req: Request, res: Response) => {
 
         const coreTeamUserIds = new Set(currentTeamMembers.map(m => m.userId));
 
+        // Calculate time allocation based on customer settings (same logic as staff endpoint)
+        let allottedMinutes = 90; // Default 90 minutes
+        
+        // Check for Friends & Family override first
+        if (job.isFriendsFamily && job.friendsFamilyMinutes) {
+          allottedMinutes = job.friendsFamilyMinutes;
+        } else {
+          // Get the expected time from price tiers based on customer price
+          const priceTier = await db
+            .select({
+              allottedMinutes: timeAllocationTiers.allottedMinutes
+            })
+            .from(timeAllocationTiers)
+            .where(
+              and(
+                sql`${timeAllocationTiers.priceMin} <= ${job.price || 0}`,
+                sql`${timeAllocationTiers.priceMax} >= ${job.price || 0}`
+              )
+            )
+            .limit(1);
+
+          if (priceTier.length > 0) {
+            allottedMinutes = priceTier[0].allottedMinutes;
+          }
+        }
+
+        // Adjust time based on team size (2 is the standard)
+        const teamSize = members.length;
+        if (teamSize === 1) {
+          allottedMinutes = allottedMinutes * 2; // Solo: double the time
+        } else if (teamSize > 2) {
+          // For 3+ people, reduce the time proportionally
+          // Example: 3 people = 2/3 of the time, 4 people = 1/2 of the time
+          allottedMinutes = Math.round(allottedMinutes * (2 / teamSize));
+        }
+        // For 2 people, keep the standard time allocation (price tiers are designed for 2 people)
+
         return {
           ...job,
-          allocatedMinutes: job.isFriendsFamily ? job.friendsFamilyMinutes : job.targetTimeMinutes,
+          allocatedMinutes: allottedMinutes,
+          teamSize,
           members: members.map(member => {
             const isCoreTeam = coreTeamUserIds.has(member.userId);
             return {
