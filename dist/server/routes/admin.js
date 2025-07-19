@@ -1214,15 +1214,57 @@ router.put("/cleans/:jobId", async (req, res) => {
             }
             // Add time entries for new staff members
             const usersToAdd = newUserIds.filter(userId => !currentUserIds.includes(userId));
-            for (const userId of usersToAdd) {
-                await db
-                    .insert(timeEntries)
-                    .values({
-                    userId: userId,
-                    jobId: jobId,
-                    clockInTime: clockInUTC,
-                    clockOutTime: clockOutUTC
-                });
+            if (usersToAdd.length > 0) {
+                // Get staff member names for the staff column
+                const staffMembers = await db
+                    .select({
+                    id: users.id,
+                    firstName: users.firstName,
+                    lastName: users.lastName
+                })
+                    .from(users)
+                    .where(inArray(users.id, usersToAdd));
+                const staffNameMap = new Map(staffMembers.map(staff => [staff.id, `${staff.firstName} ${staff.lastName}`]));
+                // Get current job info to check if these are additional staff
+                const jobInfo = await db
+                    .select({
+                    teamMembersAtCreation: jobs.teamMembersAtCreation,
+                    additionalStaff: jobs.additionalStaff
+                })
+                    .from(jobs)
+                    .where(eq(jobs.id, jobId))
+                    .limit(1);
+                if (jobInfo.length > 0) {
+                    const currentTeamMembers = Array.isArray(jobInfo[0].teamMembersAtCreation) ? jobInfo[0].teamMembersAtCreation : [];
+                    const currentAdditionalStaff = Array.isArray(jobInfo[0].additionalStaff) ? jobInfo[0].additionalStaff : [];
+                    // Determine which new staff are additional (not in core team)
+                    const newAdditionalStaff = [];
+                    for (const userId of usersToAdd) {
+                        const staffName = staffNameMap.get(userId);
+                        if (staffName && !currentTeamMembers.some((member) => member.includes(staffName.split(' ')[0]) || member.includes(staffName.split(' ')[1]) || member.includes(staffName))) {
+                            newAdditionalStaff.push(staffName);
+                        }
+                    }
+                    // Update the job's additionalStaff field if we have new additional staff
+                    if (newAdditionalStaff.length > 0) {
+                        const updatedAdditionalStaff = [...currentAdditionalStaff, ...newAdditionalStaff];
+                        await db
+                            .update(jobs)
+                            .set({ additionalStaff: updatedAdditionalStaff })
+                            .where(eq(jobs.id, jobId));
+                    }
+                }
+                for (const userId of usersToAdd) {
+                    await db
+                        .insert(timeEntries)
+                        .values({
+                        userId: userId,
+                        jobId: jobId,
+                        clockInTime: clockInUTC,
+                        clockOutTime: clockOutUTC,
+                        staff: staffNameMap.get(userId) || 'Unknown Staff'
+                    });
+                }
             }
         }
         // Find all time entries for this job
