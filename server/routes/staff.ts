@@ -377,12 +377,54 @@ router.post("/time-entries/clock-in", async (req: Request, res: Response) => {
       });
     }
 
-    // Create a new job
+    // Get customer details for the job
+    const customerDetails = await db
+      .select({
+        id: customers.id,
+        name: customers.name,
+        price: customers.price
+      })
+      .from(customers)
+      .where(eq(customers.id, customerId))
+      .limit(1);
+
+    if (customerDetails.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Customer not found"
+      });
+    }
+
+    // Get current team members for teamMembersAtCreation
+    const currentTeamMembers = await db
+      .select({
+        userId: teamsUsers.userId,
+        firstName: users.firstName,
+        lastName: users.lastName
+      })
+      .from(teamsUsers)
+      .innerJoin(users, eq(teamsUsers.userId, users.id))
+      .where(
+        and(
+          eq(teamsUsers.teamId, teamId),
+          lte(teamsUsers.startDate, new Date().toISOString().split('T')[0]),
+          or(
+            isNull(teamsUsers.endDate),
+            gte(teamsUsers.endDate, new Date().toISOString().split('T')[0])
+          )
+        )
+      );
+
+    // Create a new job with all necessary fields
     const [newJob] = await db
       .insert(jobs)
       .values({
         customerId,
         teamId,
+        price: customerDetails[0].price, // Use customer's default price
+        customerName: customerDetails[0].name, // Store customer name for reference
+        teamMembersAtCreation: currentTeamMembers.map(member => `${member.firstName} ${member.lastName}`), // Core team members
+        additionalStaff: [], // Will be populated when additional staff are added
         status: "in_progress"
       })
       .returning({ id: jobs.id, teamId: jobs.teamId });
