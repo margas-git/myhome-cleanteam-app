@@ -641,6 +641,7 @@ export function StaffDashboard() {
                   <h2 className="text-lg font-semibold text-gray-900">Currently Working</h2>
                   <p className="text-gray-600 font-medium">{activeJob.customerName}</p>
                   <p className="text-sm text-gray-500">{formatAddress(activeJob.customerAddress)}</p>
+                  <p className="text-xs text-gray-400 mt-1">Clean #{activeJob.jobId}</p>
                 </div>
               </div>
               <div className="text-right">

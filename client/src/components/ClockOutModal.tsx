@@ -28,8 +28,7 @@ export function ClockOutModal({ isOpen, onClose, onSuccess }: ClockOutModalProps
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cleanInfo, setCleanInfo] = useState<CleanInfo | null>(null);
-  const [showMemberSelection, setShowMemberSelection] = useState(false);
-  const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
+
 
   // Fetch current clean information when modal opens
   useEffect(() => {
@@ -48,21 +47,11 @@ export function ClockOutModal({ isOpen, onClose, onSuccess }: ClockOutModalProps
         const data = await response.json();
         if (data.success && data.data) {
           setCleanInfo(data.data);
-          // Default to selecting all members
-          setSelectedMembers(data.data.members.map((member: any) => member.id));
         }
       }
     } catch (error) {
       console.error("Failed to fetch current clean info:", error);
     }
-  };
-
-  const handleMemberToggle = (memberId: number) => {
-    setSelectedMembers(prev => 
-      prev.includes(memberId) 
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
-    );
   };
 
   const handleClockOut = async () => {
@@ -80,8 +69,8 @@ export function ClockOutModal({ isOpen, onClose, onSuccess }: ClockOutModalProps
         credentials: "include",
         body: JSON.stringify({
           lunchBreak,
-          clockOutAllMembers: selectedMembers.length === cleanInfo.members.length,
-          selectedMemberIds: selectedMembers
+          clockOutAllMembers: true,
+          selectedMemberIds: cleanInfo.members.map(member => member.id)
         })
       });
 
@@ -129,31 +118,13 @@ export function ClockOutModal({ isOpen, onClose, onSuccess }: ClockOutModalProps
 
             {/* Team Members Section */}
             <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3">
                 <h4 className="font-medium text-gray-900">Team Members</h4>
-                <button
-                  onClick={() => setShowMemberSelection(!showMemberSelection)}
-                  className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                  {showMemberSelection ? "Done" : "Edit"}
-                </button>
               </div>
 
               <div className="space-y-2">
                 {cleanInfo.members.map((member) => (
                   <div key={member.id} className="flex items-center space-x-3 p-2 border rounded">
-                    {showMemberSelection && (
-                      <input
-                        type="checkbox"
-                        checked={selectedMembers.includes(member.id)}
-                        onChange={() => handleMemberToggle(member.id)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                    )}
                     <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                       <span className="text-sm font-medium text-blue-600">
                         {member.name.split(' ').map(n => n[0]).join('').toUpperCase()}
@@ -165,12 +136,6 @@ export function ClockOutModal({ isOpen, onClose, onSuccess }: ClockOutModalProps
                   </div>
                 ))}
               </div>
-
-              {showMemberSelection && (
-                <p className="text-xs text-gray-500 mt-2">
-                  Uncheck team members you don't want to end the clean for. All members are selected by default.
-                </p>
-              )}
             </div>
 
 
@@ -197,10 +162,10 @@ export function ClockOutModal({ isOpen, onClose, onSuccess }: ClockOutModalProps
           </button>
           <button
             onClick={handleClockOut}
-            disabled={loading || !cleanInfo || selectedMembers.length === 0}
+            disabled={loading || !cleanInfo}
             className="flex-1 bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 disabled:opacity-50"
           >
-            {loading ? "Ending Clean..." : `End Clean (${selectedMembers.length} Member${selectedMembers.length !== 1 ? 's' : ''})`}
+            {loading ? "Ending Clean..." : `End Clean (${cleanInfo?.members.length || 0} Member${(cleanInfo?.members.length || 0) !== 1 ? 's' : ''})`}
           </button>
         </div>
       </div>
