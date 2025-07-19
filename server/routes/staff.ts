@@ -398,6 +398,20 @@ router.post("/time-entries/clock-in", async (req: Request, res: Response) => {
       ? [...new Set([...memberIds, userId])] // Remove duplicates
       : [userId];
 
+    // Get staff member names for the staff column
+    const staffMembers = await db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName
+      })
+      .from(users)
+      .where(inArray(users.id, allMemberIds));
+
+    const staffNameMap = new Map(
+      staffMembers.map(staff => [staff.id, `${staff.firstName} ${staff.lastName}`])
+    );
+
     for (const memberId of allMemberIds) {
       // Check if this member already has an active time entry
       const existingMemberEntry = await db
@@ -417,7 +431,8 @@ router.post("/time-entries/clock-in", async (req: Request, res: Response) => {
           jobId: newJob.id,
           clockInTime: currentTime,
           lunchBreak: false,
-          autoLunchDeducted: false
+          autoLunchDeducted: false,
+          staff: staffNameMap.get(memberId) || 'Unknown Staff'
         });
       }
     }
