@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AdminLayout } from "../../components/AdminLayout";
 import { formatAddress } from "../../utils/addressFormatter";
 import { AdminDashboardMap } from "../../components/AdminDashboardMap";
-import { buildApiUrl, buildSSEUrl } from "../../config/api";
+import { buildApiUrl } from "../../config/api";
 
 interface DashboardStats {
   activeCleans: number;
@@ -20,7 +20,7 @@ interface Clean {
   customerLongitude?: string;
   teamName: string;
   teamColor: string;
-  price: number;
+  price?: number;
   clockInTime: string;
   clockOutTime?: string;
   lunchBreak?: boolean;
@@ -29,7 +29,7 @@ interface Clean {
   timeDifferenceMinutes?: number;
   wageRatio?: number;
   members: {
-    id: number;
+    id: number | string;
     userId: number;
     name: string;
     clockInTime: string;
@@ -49,20 +49,20 @@ export function AdminDashboard() {
   const [editingClean, setEditingClean] = useState<Clean | null>(null);
   const [saving, setSaving] = useState(false);
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('today');
-  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: new Date().toISOString().split('T')[0], end: new Date().toISOString().split('T')[0] });
   const [isUpdating, setIsUpdating] = useState(false);
   const [appliedDateFilter, setAppliedDateFilter] = useState<'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom'>('today');
-  const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: string; end: string }>({ start: '2025-06-01', end: '2025-06-30' });
-  
-  // SSE connection state
-  const [sseConnected, setSseConnected] = useState(false);
-  const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [appliedCustomRange, setAppliedCustomRange] = useState<{ start: string; end: string }>({ start: new Date().toISOString().split('T')[0], end: new Date().toISOString().split('T')[0] });
+  const [availableStaff, setAvailableStaff] = useState<{ id: number; name: string; teamName?: string; teamColor?: string }[]>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
+  const [editingMembers, setEditingMembers] = useState<Clean['members']>([]);
   
 
 
   // Refs for the datetime inputs
   const clockInRef = useRef<HTMLInputElement>(null);
   const clockOutRef = useRef<HTMLInputElement>(null);
+  const priceRef = useRef<HTMLInputElement>(null);
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper function to convert UTC time to local datetime-local format (without seconds)
@@ -75,18 +75,6 @@ export function AdminDashboard() {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}`;
-  };
-
-  // Helper function to convert local date string to UTC Date object
-  const localDateToUTC = (dateString: string, timeString: string = '00:00:00') => {
-    const localDate = new Date(dateString + 'T' + timeString);
-    return new Date(localDate.getTime() - (localDate.getTimezoneOffset() * 60000));
-  };
-
-  // Helper function to format UTC date in local timezone for display
-  const formatUTCDateAsLocal = (utcDate: Date) => {
-    const localDate = new Date(utcDate.getTime() + (utcDate.getTimezoneOffset() * 60000));
-    return `${localDate.getDate().toString().padStart(2, '0')}/${(localDate.getMonth()+1).toString().padStart(2, '0')} ${localDate.getHours().toString().padStart(2, '0')}:${localDate.getMinutes().toString().padStart(2, '0')}`;
   };
 
   // Helper function to get date range based on filter
@@ -124,16 +112,10 @@ export function AdminDashboard() {
           end: new Date(lastSunday.getTime() + 24 * 60 * 60 * 1000)
         };
       case 'custom':
-        if (customRange.start && customRange.end) {
-          // Convert local dates to UTC for consistent timezone handling
-          const utcStart = localDateToUTC(customRange.start, '00:00:00');
-          const utcEnd = localDateToUTC(customRange.end, '23:59:59.999');
-          
-          return { start: utcStart, end: new Date(utcEnd.getTime() + 1) }; // Add 1ms to make it exclusive
-        } else {
-          // Fallback to today if no custom range is set
-          return { start: today, end: new Date(today.getTime() + 24 * 60 * 60 * 1000) };
-        }
+        // For custom dates, we need to handle timezone properly
+        const customStart = customRange.start ? new Date(customRange.start + 'T00:00:00') : today;
+        const customEnd = customRange.end ? new Date(customRange.end + 'T23:59:59') : today;
+        return { start: customStart, end: customEnd };
     }
   };
 
@@ -254,122 +236,29 @@ export function AdminDashboard() {
     fetchDashboardData(true);
   }, [appliedDateFilter, appliedCustomRange, fetchDashboardData]);
 
-  // Set up SSE for real-time updates
+  // Set up polling for real-time updates (temporary replacement for SSE)
   useEffect(() => {
-    // Check if SSE is disabled via environment variable
-    const sseDisabled = process.env.REACT_APP_DISABLE_SSE === 'true';
-    
-    if (sseDisabled) {
-      console.log("SSE disabled, using polling fallback");
-      setSseConnected(false);
-      const pollInterval = setInterval(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    const startPolling = () => {
+      // Poll every 10 seconds for updates
+      pollInterval = setInterval(() => {
         fetchDashboardData();
-      }, 30000); // Poll every 30 seconds
-      
-      return () => {
-        clearInterval(pollInterval);
-      };
-    }
-
-    let eventSource: EventSource | null = null;
-
-    const connectSSE = () => {
-      try {
-        // Close existing connection if any
-        if (eventSource) {
-          eventSource.close();
-        }
-
-        // Create new SSE connection
-        eventSource = new EventSource(buildSSEUrl("/api/admin/dashboard/events"), {
-          withCredentials: true
-        });
-
-        eventSource.onopen = () => {
-          console.log("SSE connection established");
-          setSseConnected(true);
-          setConnectionAttempts(0); // Reset connection attempts on successful connection
-        };
-
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            switch (data.type) {
-              case 'connected':
-                console.log("SSE connected:", data.message);
-                break;
-              case 'heartbeat':
-                // Optional: handle heartbeat for connection monitoring
-                break;
-              case 'staff_clocked_in':
-              case 'staff_clocked_out':
-              case 'dashboard_update':
-                // Refresh dashboard data when real-time events occur
-                console.log("Real-time update received:", data.type);
-                fetchDashboardData();
-                break;
-              default:
-                console.log("Unknown SSE event type:", data.type);
-            }
-          } catch (error) {
-            console.error("Error parsing SSE message:", error);
-          }
-        };
-
-        eventSource.onerror = (error) => {
-          console.error("SSE connection error:", error);
-          setSseConnected(false);
-          setConnectionAttempts(prev => prev + 1);
-          
-          // Attempt to reconnect after a delay, but limit attempts
-          if (connectionAttempts < 3) {
-            setTimeout(() => {
-              if (eventSource) {
-                eventSource.close();
-                connectSSE();
-              }
-            }, 5000);
-          } else {
-            // After 3 failed attempts, stay in polling mode
-            console.log("SSE connection failed after 3 attempts, staying in polling mode");
-          }
-        };
-
-      } catch (error) {
-        console.error("Failed to establish SSE connection:", error);
-        // Fallback to polling if SSE fails
-        console.log("Falling back to polling...");
-        setSseConnected(false);
-        setConnectionAttempts(prev => prev + 1);
-        
-        // Only set up polling if we haven't exceeded connection attempts
-        if (connectionAttempts < 3) {
-          const pollInterval = setInterval(() => {
-            fetchDashboardData();
-          }, 30000); // Poll every 30 seconds as fallback
-
-          return () => {
-            clearInterval(pollInterval);
-          };
-        }
-      }
+      }, 10000);
     };
 
-    // Start SSE connection
-    connectSSE();
+    startPolling();
 
     // Cleanup on unmount
     return () => {
-      if (eventSource) {
-        eventSource.close();
+      if (pollInterval) {
+        clearInterval(pollInterval);
       }
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
       }
-      setSseConnected(false);
     };
-  }, []); // Empty dependency array - SSE connection should be established once
+  }, [fetchDashboardData]); // Include fetchDashboardData as dependency
 
   const saveCleanTimes = async () => {
     if (!editingClean || !clockInRef.current) return;
@@ -378,12 +267,13 @@ export function AdminDashboard() {
     try {
       const clockInTime = clockInRef.current.value;
       const clockOutTime = clockOutRef.current?.value || null;
+      const price = priceRef.current?.value ? parseFloat(priceRef.current.value) : null;
 
       // Convert local datetime to UTC for storage
       const utcClockInTime = new Date(clockInTime).toISOString();
       const utcClockOutTime = clockOutTime ? new Date(clockOutTime).toISOString() : null;
 
-      // Update the job's overall times
+      // Update the job's overall times, price, and staff members
       const response = await fetch(buildApiUrl(`/api/admin/cleans/${editingClean.jobId}`), {
         method: "PUT",
         headers: {
@@ -392,7 +282,9 @@ export function AdminDashboard() {
         credentials: "include",
         body: JSON.stringify({
           clockInTime: utcClockInTime,
-          clockOutTime: utcClockOutTime
+          clockOutTime: utcClockOutTime,
+          price: price,
+          members: editingMembers
         })
       });
 
@@ -447,6 +339,53 @@ export function AdminDashboard() {
     }
   };
 
+  const fetchAvailableStaff = async () => {
+    try {
+      const response = await fetch(buildApiUrl("/api/admin/staff"), { credentials: "include" });
+      if (response.ok) {
+        const data = await response.json();
+        // Filter to only active staff members
+        const activeStaff = (data.data || []).filter((staff: any) => staff.active);
+        setAvailableStaff(activeStaff);
+      }
+    } catch (error) {
+      console.error("Error fetching available staff:", error);
+    }
+  };
+
+  const handleAddStaffMember = () => {
+    if (!selectedStaffId) return;
+    
+    const staffMember = availableStaff.find(staff => staff.id === selectedStaffId);
+    if (!staffMember) return;
+
+    const newMember = {
+      id: `temp_${Date.now()}`, // Temporary ID for UI
+      userId: staffMember.id,
+      name: staffMember.name,
+      clockInTime: editingClean?.clockInTime || new Date().toISOString(),
+      clockOutTime: editingClean?.clockOutTime || undefined,
+      teamName: staffMember.teamName,
+      teamColor: staffMember.teamColor,
+      isCoreTeam: false
+    };
+
+    setEditingMembers([...editingMembers, newMember]);
+    setSelectedStaffId(null);
+  };
+
+  const handleRemoveStaffMember = (memberId: number | string) => {
+    setEditingMembers(editingMembers.filter(member => member.id !== memberId));
+  };
+
+  const handleEditClean = (clean: Clean) => {
+    setEditingClean(clean);
+    // Use editModalMembers if available, otherwise fall back to members
+    const membersToUse = (clean as any).editModalMembers || clean.members;
+    setEditingMembers([...membersToUse]);
+    fetchAvailableStaff();
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -465,22 +404,12 @@ export function AdminDashboard() {
                 <h1 className="text-2xl font-bold text-gray-900">
                   Admin Dashboard
                 </h1>
-                <div className="flex items-center space-x-1 text-xs bg-gray-50 px-2 py-1 rounded-full">
-                  <div className={`w-2 h-2 rounded-full ${
-                    isUpdating ? 'bg-blue-500 animate-pulse' : 
-                    sseConnected ? 'bg-green-500' : 
-                    'bg-yellow-500'
-                  }`}></div>
-                  <span className={`font-medium ${
-                    isUpdating ? 'text-blue-600' : 
-                    sseConnected ? 'text-green-600' : 
-                    'text-yellow-600'
-                  }`}>
-                    {isUpdating ? 'Updating...' : 
-                     sseConnected ? 'Live' : 
-                     connectionAttempts > 0 ? 'Polling' : 'Connecting...'}
-                  </span>
-                </div>
+                {isUpdating && (
+                  <div className="flex items-center space-x-1 text-blue-600">
+                    <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+                    <span className="text-xs font-medium">Updating...</span>
+                  </div>
+                )}
               </div>
               <p className="mt-1 text-sm text-gray-600">
                 Monitor active cleans, view completed jobs, and manage your team.
@@ -498,10 +427,9 @@ export function AdminDashboard() {
                         const newFilter = e.target.value as 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'custom';
                         setDateFilter(newFilter);
                         
-                        // Automatically apply non-custom filters
+                        // Auto-update for non-custom selections
                         if (newFilter !== 'custom') {
                           setAppliedDateFilter(newFilter);
-                          setAppliedCustomRange(customRange); // Keep existing custom range for when switching back
                         }
                       }}
                       className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -698,16 +626,16 @@ export function AdminDashboard() {
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-activity h-6 w-6 mr-2 text-blue-500">
                 <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path>
               </svg>
-              Active Cleans ({filterCleansByDate(activeCleans, dateFilter).length})
+              Active Cleans ({activeCleans.length})
             </div>
           </div>
           <div className="p-6 pt-0">
             <div className="space-y-4">
-              {filterCleansByDate(activeCleans, dateFilter).length === 0 ? (
-                <div className="text-center text-gray-500 py-8">No active cleans for selected date range</div>
+              {activeCleans.length === 0 ? (
+                <div className="text-center text-gray-500 py-8">No active cleans</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {filterCleansByDate(activeCleans, dateFilter).map((clean) => (
+                  {activeCleans.map((clean) => (
                     <div key={clean.jobId} className="bg-gray-50 rounded-lg shadow-md p-6 transition-all duration-300 ease-in-out hover:shadow-lg">
                       <div className="flex justify-between items-start mb-1">
                         <div className="flex-1">
@@ -727,14 +655,36 @@ export function AdminDashboard() {
                             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            <p className="text-sm text-gray-500">
-                              Started: {new Date(clean.clockInTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                            </p>
+                            <div className="text-sm text-gray-500">
+                              Started: {new Date(clean.clockInTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} ({(() => {
+                                const now = new Date();
+                                const startTime = new Date(clean.clockInTime);
+                                const diffMs = now.getTime() - startTime.getTime();
+                                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                                
+                                if (diffHours > 0) {
+                                  return `${diffHours}h ${diffMinutes}m`;
+                                } else {
+                                  return `${diffMinutes}m`;
+                                }
+                              })()})
+                            </div>
                           </div>
+                          {clean.allocatedMinutes && (
+                            <div className="flex items-center space-x-2 mb-2">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <div className="text-sm text-gray-500">
+                                Target finish: {new Date(new Date(clean.clockInTime).getTime() + clean.allocatedMinutes * 60000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col space-y-2">
                           <button
-                            onClick={() => setEditingClean(clean)}
+                            onClick={() => handleEditClean(clean)}
                             className="inline-flex items-center p-2 border border-gray-300 rounded text-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                             title="Edit Clean"
                           >
@@ -747,26 +697,12 @@ export function AdminDashboard() {
                       {/* Team/Staff info at bottom */}
                       <div className="border-t border-gray-200 pt-4 mt-4">
                         <div className="flex items-center space-x-2">
-                          <div 
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: clean.teamColor }}
-                          />
                           <span
                             className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
                             style={{ backgroundColor: clean.teamColor + '20', color: clean.teamColor }}
                           >
                             {clean.teamName}
                           </span>
-                          {/* Show core team members in team color */}
-                          {clean.members && clean.members.filter(m => m.isCoreTeam).map((member) => (
-                            <span
-                              key={member.id}
-                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                              style={{ backgroundColor: clean.teamColor + '20', color: clean.teamColor }}
-                            >
-                              {member.name}
-                            </span>
-                          ))}
                           {/* Show additional staff with + prefix */}
                           {clean.members && clean.members.filter(m => !m.isCoreTeam).map((member) => (
                             <span
@@ -851,7 +787,7 @@ export function AdminDashboard() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                             </svg>
                             <p className="text-sm text-gray-500">
-                              ${clean.price}
+                              ${clean.price || 'N/A'}
                               {clean.isFriendsFamily && (
                                 <span className="text-black-500"> for Friends & Family</span>
                               )}
@@ -865,7 +801,7 @@ export function AdminDashboard() {
                           {/* Team/Staff info moved to bottom */}
                         </div>
                         <button
-                          onClick={() => setEditingClean(clean)}
+                          onClick={() => handleEditClean(clean)}
                           className="inline-flex items-center p-2 border border-gray-300 rounded text-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           title="Edit Clean"
                         >
@@ -967,7 +903,7 @@ export function AdminDashboard() {
               </svg>
             </button>
             <h3 className="text-lg font-medium text-gray-900 mb-4">
-              Edit Clean Times
+              Edit Clean Times & Staff
             </h3>
             
             <div className="space-y-4">
@@ -981,14 +917,52 @@ export function AdminDashboard() {
                 <div className="mb-4">
                   <p className="text-sm text-gray-600 font-medium">Team Members:</p>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {editingClean.members.map((member) => (
-                      <span 
-                        key={member.id}
-                        className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
-                      >
-                        {member.name}
-                      </span>
-                    ))}
+                    {editingMembers.length > 0 ? (
+                      editingMembers.map((member) => (
+                        <span 
+                          key={member.id}
+                          className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                        >
+                          {member.name} {member.teamName ? `(${member.teamName})` : ''}
+                          <button
+                            onClick={() => handleRemoveStaffMember(member.id)}
+                            className="ml-1 text-red-600 hover:text-red-800 font-bold text-sm bg-red-100 hover:bg-red-200 rounded-full w-4 h-4 flex items-center justify-center"
+                            title="Remove member"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-sm text-gray-500 italic">No members assigned</span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600 font-medium mb-2">Add Staff Member:</p>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedStaffId || ''}
+                      onChange={(e) => setSelectedStaffId(e.target.value ? parseInt(e.target.value) : null)}
+                      className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm"
+                    >
+                      <option value="">Select staff member...</option>
+                      {availableStaff
+                        .filter(staff => !editingMembers.some(member => member.userId === staff.id))
+                        .map((staff) => (
+                          <option key={staff.id} value={staff.id}>
+                            {staff.name} {staff.teamName ? `(${staff.teamName})` : ''}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={handleAddStaffMember}
+                      disabled={!selectedStaffId}
+                      className="px-3 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1015,6 +989,21 @@ export function AdminDashboard() {
                   defaultValue={editingClean.clockOutTime ? toLocalDateTimeString(editingClean.clockOutTime) : ""}
                   className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
                   placeholder="Leave empty for active cleans"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Price (optional - leave empty to use customer's default price)
+                </label>
+                <input
+                  ref={priceRef}
+                  type="number"
+                  defaultValue={editingClean.price?.toString() || ""}
+                  placeholder="Enter custom price"
+                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2"
+                  min="0"
+                  step="0.01"
                 />
               </div>
               
