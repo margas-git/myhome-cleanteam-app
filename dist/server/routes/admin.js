@@ -1007,6 +1007,7 @@ router.get("/cleans/active", async (req, res) => {
         const activeJobs = await db
             .select({
             jobId: jobs.id,
+            teamId: jobs.teamId,
             customerName: customers.name,
             customerAddress: customers.address,
             customerLatitude: customers.latitude,
@@ -1023,7 +1024,7 @@ router.get("/cleans/active", async (req, res) => {
             .innerJoin(customers, eq(jobs.customerId, customers.id))
             .leftJoin(teams, eq(jobs.teamId, teams.id))
             .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
-            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, jobs.price, customers.targetTimeMinutes, customers.friendsFamilyMinutes, customers.isFriendsFamily)
+            .groupBy(jobs.id, jobs.teamId, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, jobs.price, customers.targetTimeMinutes, customers.friendsFamilyMinutes, customers.isFriendsFamily)
             .having(sql `COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) > 0`)
             .orderBy(sql `MIN(${timeEntries.clockInTime}) DESC`);
         // For each job, get all team members who are currently working on it
@@ -1039,18 +1040,30 @@ router.get("/cleans/active", async (req, res) => {
                 .from(timeEntries)
                 .innerJoin(users, eq(timeEntries.userId, users.id))
                 .where(and(eq(timeEntries.jobId, job.jobId), sql `${timeEntries.clockOutTime} IS NULL`));
+            // Get current team members from teams_users table to determine core vs additional staff
+            const currentTeamMembers = await db
+                .select({
+                userId: teamsUsers.userId
+            })
+                .from(teamsUsers)
+                .where(and(eq(teamsUsers.teamId, job.teamId || 0), // Use job's team ID
+            sql `${teamsUsers.startDate} <= CURRENT_DATE`, sql `(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`));
+            const coreTeamUserIds = new Set(currentTeamMembers.map(m => m.userId));
             return {
                 ...job,
                 allocatedMinutes: job.isFriendsFamily ? job.friendsFamilyMinutes : job.targetTimeMinutes,
-                members: members.map(member => ({
-                    id: member.id,
-                    userId: member.userId,
-                    name: `${member.firstName} ${member.lastName}`,
-                    clockInTime: member.clockInTime,
-                    teamName: job.teamName, // Use job's team name as default
-                    teamColor: job.teamColor, // Use job's team color as default
-                    isCoreTeam: true // Assume all members are core team for active cleans
-                }))
+                members: members.map(member => {
+                    const isCoreTeam = coreTeamUserIds.has(member.userId);
+                    return {
+                        id: member.id,
+                        userId: member.userId,
+                        name: `${member.firstName} ${member.lastName}`,
+                        clockInTime: member.clockInTime,
+                        teamName: isCoreTeam ? job.teamName : 'Additional Staff',
+                        teamColor: isCoreTeam ? job.teamColor : '#888',
+                        isCoreTeam: isCoreTeam
+                    };
+                })
             };
         }));
         res.json({ success: true, data: activeCleansWithMembers });
@@ -1225,44 +1238,6 @@ router.put("/cleans/:jobId", async (req, res) => {
                     .from(users)
                     .where(inArray(users.id, usersToAdd));
                 const staffNameMap = new Map(staffMembers.map(staff => [staff.id, `${staff.firstName} ${staff.lastName}`]));
-                // Get current job info to check if these are additional staff
-                const jobInfo = await db
-                    .select({
-                    teamId: jobs.teamId,
-                    teamMembersAtCreation: jobs.teamMembersAtCreation,
-                    additionalStaff: jobs.additionalStaff
-                })
-                    .from(jobs)
-                    .where(eq(jobs.id, jobId))
-                    .limit(1);
-                if (jobInfo.length > 0) {
-                    const currentAdditionalStaff = Array.isArray(jobInfo[0].additionalStaff) ? jobInfo[0].additionalStaff : [];
-                    // Get current team members from teams_users table to determine if new staff are additional
-                    const currentTeamMembersFromDB = await db
-                        .select({
-                        userId: teamsUsers.userId
-                    })
-                        .from(teamsUsers)
-                        .where(and(eq(teamsUsers.teamId, jobInfo[0].teamId || 0), sql `${teamsUsers.startDate} <= CURRENT_DATE`, sql `(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`));
-                    const coreTeamUserIds = new Set(currentTeamMembersFromDB.map(m => m.userId));
-                    // Determine which new staff are additional (not in core team)
-                    const newAdditionalStaff = [];
-                    for (const userId of usersToAdd) {
-                        const staffName = staffNameMap.get(userId);
-                        if (staffName && !coreTeamUserIds.has(userId)) {
-                            newAdditionalStaff.push(staffName);
-                        }
-                    }
-                    // Update the job's additionalStaff field if we have new additional staff
-                    if (newAdditionalStaff.length > 0) {
-                        const updatedAdditionalStaff = [...currentAdditionalStaff, ...newAdditionalStaff];
-                        await db
-                            .update(jobs)
-                            .set({ additionalStaff: updatedAdditionalStaff })
-                            .where(eq(jobs.id, jobId));
-                        console.log(`Updated job ${jobId} additional_staff field with: ${JSON.stringify(newAdditionalStaff)}`);
-                    }
-                }
                 for (const userId of usersToAdd) {
                     await db
                         .insert(timeEntries)
@@ -1274,6 +1249,44 @@ router.put("/cleans/:jobId", async (req, res) => {
                         staff: staffNameMap.get(userId) || 'Unknown Staff'
                     });
                 }
+            }
+            // Recalculate additional_staff field based on current time entries
+            const jobInfo = await db
+                .select({
+                teamId: jobs.teamId,
+                teamMembersAtCreation: jobs.teamMembersAtCreation
+            })
+                .from(jobs)
+                .where(eq(jobs.id, jobId))
+                .limit(1);
+            if (jobInfo.length > 0) {
+                // Get all current time entries for this job after the updates
+                const allTimeEntries = await db
+                    .select({
+                    userId: timeEntries.userId,
+                    firstName: users.firstName,
+                    lastName: users.lastName
+                })
+                    .from(timeEntries)
+                    .innerJoin(users, eq(timeEntries.userId, users.id))
+                    .where(eq(timeEntries.jobId, jobId));
+                // Get current team members from teams_users table
+                const currentTeamMembersFromDB = await db
+                    .select({
+                    userId: teamsUsers.userId
+                })
+                    .from(teamsUsers)
+                    .where(and(eq(teamsUsers.teamId, jobInfo[0].teamId || 0), sql `${teamsUsers.startDate} <= CURRENT_DATE`, sql `(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`));
+                const coreTeamUserIds = new Set(currentTeamMembersFromDB.map(m => m.userId));
+                // Determine additional staff (people who worked but aren't in core team)
+                const additionalStaff = allTimeEntries.filter(entry => !coreTeamUserIds.has(entry.userId));
+                const additionalStaffNames = additionalStaff.map(entry => `${entry.firstName} ${entry.lastName}`);
+                // Update the job's additionalStaff field
+                await db
+                    .update(jobs)
+                    .set({ additionalStaff: additionalStaffNames })
+                    .where(eq(jobs.id, jobId));
+                console.log(`Recalculated job ${jobId} additional_staff field: ${JSON.stringify(additionalStaffNames)}`);
             }
         }
         // Find all time entries for this job
