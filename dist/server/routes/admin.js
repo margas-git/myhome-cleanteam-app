@@ -17,68 +17,73 @@ router.use(adminMiddleware);
 // Get all customers
 router.get("/customers", async (req, res) => {
     try {
-        // Get all customers first (simple query for now)
         const allCustomers = await db
             .select()
             .from(customers)
             .orderBy(customers.name);
-        // Get all completed jobs with metrics in a single query
-        const completedJobsWithMetrics = await db
-            .select({
-            customerId: jobs.customerId,
-            jobId: jobs.id,
-            price: customers.price,
-            isFriendsFamily: customers.isFriendsFamily,
-            friendsFamilyMinutes: customers.friendsFamilyMinutes,
-            actualJobDuration: sql `
-          EXTRACT(EPOCH FROM (
-            MAX(${timeEntries.clockOutTime}) - MIN(${timeEntries.clockInTime})
-          )) / 3600
-        `,
-            totalWages: sql `
-          COALESCE(
-            SUM(
-              EXTRACT(EPOCH FROM (${timeEntries.clockOutTime} - ${timeEntries.clockInTime})) / 3600 * 32.31
-            ),
-            0
-          )
-        `,
-            allottedMinutes: timeAllocationTiers.allottedMinutes
-        })
-            .from(jobs)
-            .innerJoin(customers, eq(jobs.customerId, customers.id))
-            .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
-            .leftJoin(timeAllocationTiers, and(sql `${timeAllocationTiers.priceMin} <= ${customers.price}`, sql `${timeAllocationTiers.priceMax} >= ${customers.price}`))
-            .where(sql `${timeEntries.clockOutTime} IS NOT NULL`)
-            .groupBy(jobs.id, jobs.customerId, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes, timeAllocationTiers.allottedMinutes)
-            .having(sql `COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`);
-        // Group completed jobs by customer
-        const jobsByCustomer = completedJobsWithMetrics.reduce((acc, job) => {
-            if (job.customerId && !acc[job.customerId]) {
-                acc[job.customerId] = [];
+        // Calculate target time (efficiency) and wage ratio for each customer based on historical data
+        const customersWithTargetTime = await Promise.all(allCustomers.map(async (customer) => {
+            // Get all completed jobs for this customer to calculate average efficiency and wage ratio
+            const completedJobs = await db
+                .select({
+                jobId: jobs.id,
+                price: customers.price,
+                actualJobDuration: sql `
+                  EXTRACT(EPOCH FROM (
+                    MAX(${timeEntries.clockOutTime}) - MIN(${timeEntries.clockInTime})
+                  )) / 3600
+                `,
+                totalWages: sql `
+                  COALESCE(
+                    SUM(
+                      EXTRACT(EPOCH FROM (${timeEntries.clockOutTime} - ${timeEntries.clockInTime})) / 3600 * 32.31
+                    ),
+                    0
+                  )
+                `
+            })
+                .from(jobs)
+                .innerJoin(customers, eq(jobs.customerId, customers.id))
+                .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
+                .where(and(eq(jobs.customerId, customer.id), sql `${timeEntries.clockOutTime} IS NOT NULL`))
+                .groupBy(jobs.id, customers.price)
+                .having(sql `COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`);
+            if (customer.name === 'Aden J Margheriti') {
+                console.log(`DEBUG: Found ${completedJobs.length} completed jobs for Aden`);
+                if (completedJobs.length > 0) {
+                    console.log(`DEBUG: Aden completed jobs:`, completedJobs);
+                }
             }
-            if (job.customerId) {
-                acc[job.customerId].push(job);
-            }
-            return acc;
-        }, {});
-        // Calculate metrics for each customer
-        const customersWithMetrics = allCustomers.map(customer => {
-            const customerJobs = jobsByCustomer[customer.id] || [];
             let averageEfficiency = 0;
             let totalWageRatio = 0;
             let validJobs = 0;
-            for (const job of customerJobs) {
+            for (const job of completedJobs) {
                 if (job.actualJobDuration > 0) {
                     let expectedTime = 1.5; // Default 1.5 hours (90 minutes)
                     if (customer.isFriendsFamily && customer.friendsFamilyMinutes) {
                         expectedTime = customer.friendsFamilyMinutes / 60; // Use friends & family minutes
+                        if (customer.name === 'Aden J Margheriti') {
+                            console.log(`DEBUG: Aden job - expectedTime: ${expectedTime}h, actualJobDuration: ${job.actualJobDuration}h, friendsFamilyMinutes: ${customer.friendsFamilyMinutes}`);
+                        }
                     }
-                    else if (job.allottedMinutes) {
-                        expectedTime = job.allottedMinutes / 60; // Convert minutes to hours
+                    else {
+                        // Get the expected time from price tiers based on customer price
+                        const priceTier = await db
+                            .select({
+                            allottedMinutes: timeAllocationTiers.allottedMinutes
+                        })
+                            .from(timeAllocationTiers)
+                            .where(and(sql `${timeAllocationTiers.priceMin} <= ${job.price}`, sql `${timeAllocationTiers.priceMax} >= ${job.price}`))
+                            .limit(1);
+                        if (priceTier.length > 0) {
+                            expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
+                        }
                     }
                     // Calculate efficiency for this job
                     const jobEfficiency = (expectedTime / job.actualJobDuration) * 100;
+                    if (customer.name === 'Aden J Margheriti') {
+                        console.log(`DEBUG: Aden job efficiency: ${jobEfficiency}%`);
+                    }
                     averageEfficiency += Math.max(Math.round(jobEfficiency), 0);
                     // Calculate wage ratio for this job
                     const jobWageRatio = job.price > 0 ? Math.round((job.totalWages / job.price) * 100) : 0;
@@ -90,11 +95,11 @@ router.get("/customers", async (req, res) => {
             const finalWageRatio = validJobs > 0 ? totalWageRatio / validJobs : 0;
             return {
                 ...customer,
-                targetTimeMinutes: Math.round(finalEfficiency),
-                averageWageRatio: Math.round(finalWageRatio)
+                targetTimeMinutes: Math.round(finalEfficiency), // This is now the efficiency percentage
+                averageWageRatio: Math.round(finalWageRatio) // Calculate wage ratio dynamically too
             };
-        });
-        res.json({ success: true, data: customersWithMetrics });
+        }));
+        res.json({ success: true, data: customersWithTargetTime });
     }
     catch (error) {
         console.error("Error fetching customers:", error);
@@ -255,8 +260,11 @@ router.get("/staff", async (req, res) => {
             const teamAssignment = teamAssignments.find(assignment => assignment.userId === staff.id);
             return {
                 ...staff,
+                name: `${staff.firstName} ${staff.lastName}`,
                 activeJob: activeEntry || null,
-                team: teamAssignment || null
+                team: teamAssignment || null,
+                teamName: teamAssignment?.teamName,
+                teamColor: teamAssignment?.teamColor
             };
         });
         res.json({ success: true, data: staffWithStatus });
@@ -270,7 +278,7 @@ router.get("/staff", async (req, res) => {
 router.put("/staff/:id", async (req, res) => {
     try {
         const staffId = parseInt(req.params.id);
-        const { email, firstName, lastName, phone, role, active } = req.body;
+        const { email, firstName, lastName, phone, role, active, password } = req.body;
         // Only require fields if we're doing a full update (not just archive)
         if (active === undefined && (!email || !firstName || !lastName)) {
             return res.status(400).json({
@@ -304,6 +312,11 @@ router.put("/staff/:id", async (req, res) => {
             updateData.role = role;
         if (active !== undefined)
             updateData.active = active;
+        // Handle password update if provided
+        if (password && password.trim() !== '') {
+            const passwordHash = await bcrypt.hash(password, 10);
+            updateData.passwordHash = passwordHash;
+        }
         const [updatedUser] = await db
             .update(users)
             .set(updateData)
@@ -791,7 +804,7 @@ router.get("/cleans/completed", async (req, res) => {
             customerLongitude: customers.longitude,
             teamName: teams.name,
             teamColor: teams.colorHex,
-            price: customers.price,
+            price: jobs.price,
             isFriendsFamily: customers.isFriendsFamily,
             friendsFamilyMinutes: customers.friendsFamilyMinutes,
             clockInTime: sql `MIN(${timeEntries.clockInTime})`,
@@ -804,7 +817,7 @@ router.get("/cleans/completed", async (req, res) => {
             .leftJoin(teams, eq(jobs.teamId, teams.id))
             .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
             .where(and(sql `${timeEntries.clockOutTime} IS NOT NULL`, sql `${timeEntries.clockOutTime} >= ${startUTC.toISOString()}`, sql `${timeEntries.clockOutTime} < ${endUTC.toISOString()}`))
-            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, customers.price, customers.isFriendsFamily, customers.friendsFamilyMinutes, jobs.teamMembersAtCreation, jobs.additionalStaff)
+            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, jobs.price, customers.isFriendsFamily, customers.friendsFamilyMinutes, jobs.teamMembersAtCreation, jobs.additionalStaff)
             .having(sql `COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) = 0`)
             .orderBy(sql `MAX(${timeEntries.clockOutTime}) DESC`);
         // Fetch staff pay rate from settings
@@ -817,8 +830,40 @@ router.get("/cleans/completed", async (req, res) => {
         // For each job, get all team members who worked on it and calculate efficiency
         const completedCleansWithMembers = await Promise.all(completedJobs.map(async (job, idx) => {
             // Parse the team members from the new fields
-            const coreTeamMembers = parseMaybeJson(job.teamMembersAtCreation);
-            const additionalStaffMembers = parseMaybeJson(job.additionalStaff);
+            let coreTeamMembers = parseMaybeJson(job.teamMembersAtCreation);
+            let additionalStaffMembers = parseMaybeJson(job.additionalStaff);
+            // If additional staff is null/empty, populate it from time entries
+            if (!additionalStaffMembers || additionalStaffMembers.length === 0) {
+                // Get all time entries for this job to identify additional staff
+                const allTimeEntries = await db
+                    .select({
+                    id: timeEntries.id,
+                    userId: timeEntries.userId,
+                    firstName: users.firstName,
+                    lastName: users.lastName,
+                    clockInTime: timeEntries.clockInTime,
+                    clockOutTime: timeEntries.clockOutTime
+                })
+                    .from(timeEntries)
+                    .innerJoin(users, eq(timeEntries.userId, users.id))
+                    .where(eq(timeEntries.jobId, job.jobId));
+                // If we have team members at creation, identify additional staff
+                if (coreTeamMembers && coreTeamMembers.length > 0) {
+                    const coreTeamNames = coreTeamMembers.map((member) => typeof member === 'string' ? member : member.name);
+                    // Find staff who worked but aren't in the core team
+                    const additionalStaff = allTimeEntries.filter(entry => {
+                        const fullName = `${entry.firstName} ${entry.lastName}`;
+                        return !coreTeamNames.some((coreName) => coreName.includes(entry.firstName) || coreName.includes(entry.lastName) || coreName.includes(fullName));
+                    });
+                    additionalStaffMembers = additionalStaff.map(entry => ({
+                        id: entry.id,
+                        userId: entry.userId,
+                        name: `${entry.firstName} ${entry.lastName}`,
+                        clockInTime: entry.clockInTime,
+                        clockOutTime: entry.clockOutTime
+                    }));
+                }
+            }
             // Get all time entries for this job to calculate efficiency
             const timeEntriesForJob = await db
                 .select({
@@ -858,13 +903,14 @@ router.get("/cleans/completed", async (req, res) => {
                         expectedTime = job.friendsFamilyMinutes / 60; // Use friends & family minutes
                     }
                     else {
-                        // Get the expected time from price tiers based on customer price
+                        // Get the expected time from price tiers based on job price (fallback to customer price)
+                        const jobPrice = job.price || 0;
                         const priceTier = await db
                             .select({
                             allottedMinutes: timeAllocationTiers.allottedMinutes
                         })
                             .from(timeAllocationTiers)
-                            .where(and(sql `${timeAllocationTiers.priceMin} <= ${job.price}`, sql `${timeAllocationTiers.priceMax} >= ${job.price}`))
+                            .where(and(sql `${timeAllocationTiers.priceMin} <= ${jobPrice}`, sql `${timeAllocationTiers.priceMax} >= ${jobPrice}`))
                             .limit(1);
                         if (priceTier.length > 0) {
                             expectedTime = priceTier[0].allottedMinutes / 60; // Convert minutes to hours
@@ -884,7 +930,8 @@ router.get("/cleans/completed", async (req, res) => {
                             }
                             return sum;
                         }, 0);
-                        wageRatio = job.price > 0 ? Math.round((totalWages / job.price) * 100) : 0;
+                        const jobPrice = job.price || 0; // Use job price or fallback to 0
+                        wageRatio = jobPrice > 0 ? Math.round((totalWages / jobPrice) * 100) : 0;
                     }
                 }
             }
@@ -914,13 +961,28 @@ router.get("/cleans/completed", async (req, res) => {
                     isCoreTeam: false
                 }))
             ];
+            // For edit modal, use time entries data if stored team data is null
+            let editModalMembers = allMembers;
+            if (!coreTeamMembers || coreTeamMembers.length === 0) {
+                editModalMembers = timeEntriesForJob.map((entry) => ({
+                    id: entry.id,
+                    userId: entry.userId,
+                    name: `${entry.firstName} ${entry.lastName}`,
+                    clockInTime: entry.clockInTime,
+                    clockOutTime: entry.clockOutTime,
+                    teamName: job.teamName,
+                    teamColor: job.teamColor,
+                    isCoreTeam: true
+                }));
+            }
             return {
                 ...job,
                 efficiency,
                 allocatedMinutes,
                 timeDifferenceMinutes,
                 wageRatio,
-                members: allMembers
+                members: allMembers,
+                editModalMembers: editModalMembers
             };
         }));
         res.json({ success: true, data: completedCleansWithMembers });
@@ -941,7 +1003,7 @@ router.get("/cleans/active", async (req, res) => {
         // Convert local time boundaries to UTC for database queries
         const todayUTC = new Date(today.getTime() - today.getTimezoneOffset() * 60000);
         const tomorrowUTC = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000);
-        // First, get all active jobs for today (jobs where ANY time entry has clockOutTime IS NULL)
+        // First, get all active jobs (jobs where ANY time entry has clockOutTime IS NULL)
         const activeJobs = await db
             .select({
             jobId: jobs.id,
@@ -951,14 +1013,17 @@ router.get("/cleans/active", async (req, res) => {
             customerLongitude: customers.longitude,
             teamName: teams.name,
             teamColor: teams.colorHex,
-            clockInTime: sql `MIN(${timeEntries.clockInTime})`
+            clockInTime: sql `MIN(${timeEntries.clockInTime})`,
+            price: jobs.price,
+            targetTimeMinutes: customers.targetTimeMinutes,
+            friendsFamilyMinutes: customers.friendsFamilyMinutes,
+            isFriendsFamily: customers.isFriendsFamily
         })
             .from(jobs)
             .innerJoin(customers, eq(jobs.customerId, customers.id))
             .leftJoin(teams, eq(jobs.teamId, teams.id))
             .innerJoin(timeEntries, eq(jobs.id, timeEntries.jobId))
-            .where(and(sql `${timeEntries.clockInTime} >= ${todayUTC.toISOString()}`, sql `${timeEntries.clockInTime} < ${tomorrowUTC.toISOString()}`))
-            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex)
+            .groupBy(jobs.id, customers.name, customers.address, customers.latitude, customers.longitude, teams.name, teams.colorHex, jobs.price, customers.targetTimeMinutes, customers.friendsFamilyMinutes, customers.isFriendsFamily)
             .having(sql `COUNT(CASE WHEN ${timeEntries.clockOutTime} IS NULL THEN 1 END) > 0`)
             .orderBy(sql `MIN(${timeEntries.clockInTime}) DESC`);
         // For each job, get all team members who are currently working on it
@@ -969,26 +1034,22 @@ router.get("/cleans/active", async (req, res) => {
                 userId: timeEntries.userId,
                 firstName: users.firstName,
                 lastName: users.lastName,
-                clockInTime: timeEntries.clockInTime,
-                teamName: teams.name,
-                teamColor: teams.colorHex
+                clockInTime: timeEntries.clockInTime
             })
                 .from(timeEntries)
                 .innerJoin(users, eq(timeEntries.userId, users.id))
-                .leftJoin(teamsUsers, eq(users.id, teamsUsers.userId))
-                .leftJoin(teams, eq(teamsUsers.teamId, teams.id))
-                .where(and(eq(timeEntries.jobId, job.jobId), sql `${timeEntries.clockOutTime} IS NULL`, 
-            // Only get current active team memberships
-            sql `${teamsUsers.startDate} <= CURRENT_DATE`, sql `(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`, eq(teams.active, true)));
+                .where(and(eq(timeEntries.jobId, job.jobId), sql `${timeEntries.clockOutTime} IS NULL`));
             return {
                 ...job,
+                allocatedMinutes: job.isFriendsFamily ? job.friendsFamilyMinutes : job.targetTimeMinutes,
                 members: members.map(member => ({
                     id: member.id,
                     userId: member.userId,
                     name: `${member.firstName} ${member.lastName}`,
                     clockInTime: member.clockInTime,
-                    teamName: member.teamName,
-                    teamColor: member.teamColor
+                    teamName: job.teamName, // Use job's team name as default
+                    teamColor: job.teamColor, // Use job's team color as default
+                    isCoreTeam: true // Assume all members are core team for active cleans
                 }))
             };
         }));
@@ -1111,11 +1172,11 @@ router.post("/cleans/end-active", async (req, res) => {
         res.status(500).json({ success: false, error: "Failed to end active clean" });
     }
 });
-// Update job times (for admin editing)
+// Update job times, price, and staff members (for admin editing)
 router.put("/cleans/:jobId", async (req, res) => {
     try {
         const jobId = parseInt(req.params.jobId);
-        const { clockInTime, clockOutTime } = req.body;
+        const { clockInTime, clockOutTime, price, members } = req.body;
         if (!clockInTime) {
             return res.status(400).json({
                 success: false,
@@ -1125,6 +1186,45 @@ router.put("/cleans/:jobId", async (req, res) => {
         // Convert UTC datetime strings to Date objects
         const clockInUTC = new Date(clockInTime);
         const clockOutUTC = clockOutTime ? new Date(clockOutTime) : null;
+        // Update the job price if provided
+        if (price !== undefined) {
+            await db
+                .update(jobs)
+                .set({ price: price })
+                .where(eq(jobs.id, jobId));
+        }
+        // Handle staff member updates if provided
+        if (members && Array.isArray(members)) {
+            // Get current time entries for this job
+            const currentEntries = await db
+                .select({
+                id: timeEntries.id,
+                userId: timeEntries.userId
+            })
+                .from(timeEntries)
+                .where(eq(timeEntries.jobId, jobId));
+            const currentUserIds = currentEntries.map(entry => entry.userId);
+            const newUserIds = members.map((member) => member.userId);
+            // Remove time entries for staff members no longer in the job
+            const usersToRemove = currentUserIds.filter(userId => !newUserIds.includes(userId));
+            if (usersToRemove.length > 0) {
+                await db
+                    .delete(timeEntries)
+                    .where(and(eq(timeEntries.jobId, jobId), inArray(timeEntries.userId, usersToRemove)));
+            }
+            // Add time entries for new staff members
+            const usersToAdd = newUserIds.filter(userId => !currentUserIds.includes(userId));
+            for (const userId of usersToAdd) {
+                await db
+                    .insert(timeEntries)
+                    .values({
+                    userId: userId,
+                    jobId: jobId,
+                    clockInTime: clockInUTC,
+                    clockOutTime: clockOutUTC
+                });
+            }
+        }
         // Find all time entries for this job
         const jobEntries = await db
             .select({
@@ -1181,23 +1281,6 @@ router.put("/cleans/:jobId", async (req, res) => {
                     });
                 }
             }
-        }
-        // Send SSE event to all connected staff about the job update
-        console.log('🔄 Sending SSE event for job update:', { jobId, clockInTime: clockInUTC, clockOutTime: clockOutUTC });
-        try {
-            const { broadcastSSEEvent } = await import('./staff');
-            broadcastSSEEvent({
-                type: 'job_updated',
-                jobId,
-                clockInTime: clockInUTC,
-                clockOutTime: clockOutUTC,
-                updatedEntries: updatedEntries.length,
-                timestamp: new Date()
-            });
-            console.log('✅ SSE event sent successfully');
-        }
-        catch (error) {
-            console.error('❌ Failed to send SSE event for job update:', error);
         }
         res.json({
             success: true,
@@ -2281,18 +2364,11 @@ router.post("/customers/calculate-metrics", async (req, res) => {
     }
 });
 export { calculateCustomerMetrics };
-const connectedClients = new Map();
-const MAX_CONNECTIONS = 100; // Limit concurrent connections
-const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+// === REAL-TIME DASHBOARD UPDATES ===
+// Store connected clients for SSE
+const connectedClients = new Set();
 // SSE endpoint for real-time dashboard updates
 router.get("/dashboard/events", async (req, res) => {
-    // Check connection limit
-    if (connectedClients.size >= MAX_CONNECTIONS) {
-        return res.status(503).json({
-            success: false,
-            error: "Too many concurrent connections"
-        });
-    }
     // Set headers for SSE
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -2301,98 +2377,44 @@ router.get("/dashboard/events", async (req, res) => {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Cache-Control'
     });
-    // Generate unique client ID
-    const clientId = `${req.user?.id || 'anonymous'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    // Create client object
-    const client = {
-        response: res,
-        userId: req.user?.id || 0,
-        connectedAt: new Date(),
-        lastHeartbeat: new Date()
-    };
-    // Add this client to the map
-    connectedClients.set(clientId, client);
     // Send initial connection message
-    res.write(`data: ${JSON.stringify({
-        type: 'connected',
-        message: 'SSE connection established',
-        clientId
-    })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'connected', message: 'SSE connection established' })}\n\n`);
+    // Add this client to the set
+    connectedClients.add(res);
     // Handle client disconnect
-    const cleanup = () => {
-        connectedClients.delete(clientId);
-        console.log(`SSE client disconnected: ${clientId}. Active connections: ${connectedClients.size}`);
-    };
-    req.on('close', cleanup);
-    req.on('error', cleanup);
+    req.on('close', () => {
+        connectedClients.delete(res);
+    });
     // Keep connection alive with heartbeat
     const heartbeat = setInterval(() => {
         if (res.writableEnded) {
             clearInterval(heartbeat);
-            cleanup();
+            connectedClients.delete(res);
             return;
         }
-        try {
-            client.lastHeartbeat = new Date();
-            res.write(`data: ${JSON.stringify({
-                type: 'heartbeat',
-                timestamp: Date.now()
-            })}\n\n`);
-        }
-        catch (error) {
-            console.error('Heartbeat failed for client:', clientId, error);
-            clearInterval(heartbeat);
-            cleanup();
-        }
-    }, HEARTBEAT_INTERVAL);
+        res.write(`data: ${JSON.stringify({ type: 'heartbeat', timestamp: Date.now() })}\n\n`);
+    }, 30000); // Every 30 seconds
     // Clean up on disconnect
     req.on('close', () => {
         clearInterval(heartbeat);
-        cleanup();
+        connectedClients.delete(res);
     });
-    console.log(`SSE client connected: ${clientId}. Active connections: ${connectedClients.size}`);
 });
 // Function to broadcast dashboard updates to all connected clients
 export const broadcastDashboardUpdate = (eventType, data) => {
     const message = JSON.stringify({ type: eventType, data, timestamp: Date.now() });
-    let sentCount = 0;
-    let errorCount = 0;
-    // Clean up disconnected clients first
-    for (const [clientId, client] of connectedClients.entries()) {
-        if (client.response.writableEnded) {
-            connectedClients.delete(clientId);
-            continue;
+    connectedClients.forEach(client => {
+        if (!client.writableEnded) {
+            client.write(`data: ${message}\n\n`);
         }
-        try {
-            client.response.write(`data: ${message}\n\n`);
-            sentCount++;
+    });
+    // Clean up disconnected clients
+    connectedClients.forEach(client => {
+        if (client.writableEnded) {
+            connectedClients.delete(client);
         }
-        catch (error) {
-            console.error(`Failed to send to client ${clientId}:`, error);
-            connectedClients.delete(clientId);
-            errorCount++;
-        }
-    }
-    if (sentCount > 0 || errorCount > 0) {
-        console.log(`Broadcasted ${eventType} to ${sentCount} clients (${errorCount} errors). Active connections: ${connectedClients.size}`);
-    }
+    });
 };
-// Periodic cleanup of stale connections
-setInterval(() => {
-    const now = new Date();
-    let cleanedCount = 0;
-    for (const [clientId, client] of connectedClients.entries()) {
-        // Remove clients that haven't responded to heartbeat in 2 minutes
-        const timeSinceHeartbeat = now.getTime() - client.lastHeartbeat.getTime();
-        if (timeSinceHeartbeat > 120000) { // 2 minutes
-            connectedClients.delete(clientId);
-            cleanedCount++;
-        }
-    }
-    if (cleanedCount > 0) {
-        console.log(`Cleaned up ${cleanedCount} stale SSE connections. Active connections: ${connectedClients.size}`);
-    }
-}, 60000); // Check every minute
 // === PAYROLL SETTINGS ===
 // Get all payroll settings
 router.get("/settings/payroll", async (req, res) => {

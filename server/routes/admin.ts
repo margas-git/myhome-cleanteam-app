@@ -323,7 +323,7 @@ router.get("/staff", async (req: Request, res: Response) => {
 router.put("/staff/:id", async (req: Request, res: Response) => {
   try {
     const staffId = parseInt(req.params.id);
-    const { email, firstName, lastName, phone, role, active } = req.body;
+    const { email, firstName, lastName, phone, role, active, password } = req.body;
 
     // Only require fields if we're doing a full update (not just archive)
     if (active === undefined && (!email || !firstName || !lastName)) {
@@ -355,6 +355,12 @@ router.put("/staff/:id", async (req: Request, res: Response) => {
     if (phone !== undefined) updateData.phone = phone || null;
     if (role !== undefined) updateData.role = role;
     if (active !== undefined) updateData.active = active;
+    
+    // Handle password update if provided
+    if (password && password.trim() !== '') {
+      const passwordHash = await bcrypt.hash(password, 10);
+      updateData.passwordHash = passwordHash;
+    }
 
     const [updatedUser] = await db
       .update(users)
