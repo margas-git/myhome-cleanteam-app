@@ -1430,6 +1430,7 @@ router.put("/cleans/:jobId", async (req: Request, res: Response) => {
         // Get current job info to check if these are additional staff
         const jobInfo = await db
           .select({
+            teamId: jobs.teamId,
             teamMembersAtCreation: jobs.teamMembersAtCreation,
             additionalStaff: jobs.additionalStaff
           })
@@ -1438,16 +1439,29 @@ router.put("/cleans/:jobId", async (req: Request, res: Response) => {
           .limit(1);
 
         if (jobInfo.length > 0) {
-          const currentTeamMembers = Array.isArray(jobInfo[0].teamMembersAtCreation) ? jobInfo[0].teamMembersAtCreation : [];
           const currentAdditionalStaff = Array.isArray(jobInfo[0].additionalStaff) ? jobInfo[0].additionalStaff : [];
+          
+          // Get current team members from teams_users table to determine if new staff are additional
+          const currentTeamMembersFromDB = await db
+            .select({
+              userId: teamsUsers.userId
+            })
+            .from(teamsUsers)
+            .where(
+              and(
+                eq(teamsUsers.teamId, jobInfo[0].teamId || 0),
+                sql`${teamsUsers.startDate} <= CURRENT_DATE`,
+                sql`(${teamsUsers.endDate} IS NULL OR ${teamsUsers.endDate} >= CURRENT_DATE)`
+              )
+            );
+
+          const coreTeamUserIds = new Set(currentTeamMembersFromDB.map(m => m.userId));
           
           // Determine which new staff are additional (not in core team)
           const newAdditionalStaff = [];
           for (const userId of usersToAdd) {
             const staffName = staffNameMap.get(userId);
-            if (staffName && !currentTeamMembers.some((member: string) => 
-              member.includes(staffName.split(' ')[0]) || member.includes(staffName.split(' ')[1]) || member.includes(staffName)
-            )) {
+            if (staffName && !coreTeamUserIds.has(userId)) {
               newAdditionalStaff.push(staffName);
             }
           }
@@ -1459,6 +1473,8 @@ router.put("/cleans/:jobId", async (req: Request, res: Response) => {
               .update(jobs)
               .set({ additionalStaff: updatedAdditionalStaff })
               .where(eq(jobs.id, jobId));
+            
+            console.log(`Updated job ${jobId} additional_staff field with: ${JSON.stringify(newAdditionalStaff)}`);
           }
         }
 
